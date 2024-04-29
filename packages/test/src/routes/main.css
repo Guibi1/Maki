@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+    .test {
+        @apply text-red-50;
+
+        & > p {
+            @apply text-red-50;
+        }
+    }
+}

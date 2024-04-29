@@ -1,8 +1,9 @@
-import { type Server } from "bun";
 import { watch } from "node:fs";
 import { format, parse } from "node:path";
-import { Fragment, lazy, type ReactNode } from "react";
+import type { Server } from "bun";
+import { Fragment, type ReactNode, lazy } from "react";
 import { renderToReadableStream } from "react-dom/server";
+import type { MakiConfig } from "../..";
 import Router, { LayoutRoute, PageRoute } from "../routing/Router";
 import { jsx } from "../utils";
 
@@ -18,7 +19,7 @@ const endpointGlob = new Bun.Glob("**/{server.{ts,js}");
 type ServerOptions = {
     cwd: string;
     port: number;
-}
+};
 
 export async function createServer(options: ServerOptions) {
     console.clear();
@@ -28,12 +29,12 @@ export async function createServer(options: ServerOptions) {
     const server: Server = Bun.serve({
         async fetch(req) {
             const url = new URL(req.url, server.url);
-            const method = req.headers.get("METHOD") as Method ?? "GET";
-            console.log("New request:", url.pathname)
+            const method = (req.headers.get("METHOD") as Method) ?? "GET";
+            console.log("New request:", url.pathname);
 
             // * BUILD *
             if (method === "GET" && url.pathname.startsWith("/@maki/")) {
-                const pathname = url.pathname.slice(6)
+                const pathname = url.pathname.slice(6);
                 if (pathname === "/_ws") {
                     if (server.upgrade(req)) return;
                     return new Response("WebSocket upgrade failed", { status: 400 });
@@ -52,18 +53,18 @@ export async function createServer(options: ServerOptions) {
             }
 
             // * SERVER ENDPOINTS *
-            const endpoint = "(url.pathname, method)"
+            const endpoint = !"(url.pathname, method)";
             if (endpoint) {
-                const output = ""
+                const output = "";
                 return new Response(JSON.parse(output), { headers: { "Content-Type": "application/json" } });
             }
 
             if (method !== "GET") {
                 return new Response("405 - Method not allowed", { status: 405 });
             }
-    
+
             // * PUBLIC *
-            const publicFile = Bun.file(options.cwd + "/public" + url.pathname);
+            const publicFile = Bun.file(`${options.cwd}/public${url.pathname}`);
             if (await publicFile.exists()) {
                 return new Response(publicFile);
             }
@@ -73,10 +74,12 @@ export async function createServer(options: ServerOptions) {
                 const page = createReactTree(router, url.pathname);
                 const stream = await renderToReadableStream(page, {
                     bootstrapModules: ["/@maki/_client"],
-                    bootstrapScriptContent: `window.maki = ${JSON.stringify({ routes: routerToClient(router) ?? {} })};`,
+                    bootstrapScriptContent: `window.maki = ${JSON.stringify({
+                        routes: routerToClient(router) ?? {},
+                    })};`,
                 });
 
-                return new Response(stream, { headers: { 'content-type': 'text/html' } });
+                return new Response(stream, { headers: { "content-type": "text/html" } });
             } catch (e) {
                 console.error(e);
                 throw "Render error: invalid React component";
@@ -97,63 +100,68 @@ export async function createServer(options: ServerOptions) {
         port: options.port,
     });
 
-    
-    const watcher = watch(options.cwd + "/src/routes", { recursive: true });
+    const watcher = watch(`${options.cwd}/src/routes`, { recursive: true });
     watcher.addListener("change", async (_, file: string) => {
         console.log(file, "modified, reloading...");
         build = await buildProject(options);
         router = createRouter(options);
-        
+
         server.publish("hmr", JSON.stringify({ type: "change", pathname: `/${parse(file).dir}` }), true);
     });
-    
+
     console.log("Server running on port", server.port, "\n");
     return server;
 }
 
 async function buildProject({ cwd }: ServerOptions) {
+    const config = (await import(`${cwd}/maki.config`)).default as MakiConfig;
+
     console.time("Compilation done!");
     const result = await Bun.build({
-        entrypoints: Array.from(routerGlob.scanSync({ cwd: cwd + "/src/routes" })).map(s => cwd + "/src/routes/" + s).concat(import.meta.dir + "/../client/client.ts"),
+        entrypoints: Array.from(routerGlob.scanSync({ cwd: `${cwd}/src/routes` }))
+            .map((s) => `${cwd}/src/routes/${s}`)
+            .concat(`${import.meta.dir}/../client/client.ts`),
         publicPath: "./",
-        root: cwd + "/src",
+        root: `${cwd}/src`,
         target: "browser",
         sourcemap: "inline",
+        plugins: config.plugins,
         splitting: true,
         minify: true,
         naming: {
-            entry: './@maki/[dir]/[name].[ext]',
-            chunk: './@maki/chunks/[hash].[ext]',
-            asset: './@maki/assets/[name]-[hash].[ext]',
-        }
+            entry: "./@maki/[dir]/[name].[ext]",
+            chunk: "./@maki/chunks/[hash].[ext]",
+            asset: "./@maki/assets/[name]-[hash].[ext]",
+        },
     });
 
     if (!result.success) {
+        console.error("Bun build failed");
         throw new AggregateError(result.logs, "Build failed");
     }
 
     const client = result.outputs.find((o) => o.path.endsWith("maki/src/client/client.js"));
     if (!client) {
-        throw "Build error: Couldnt find the client entry-point."
+        throw "Build error: Couldnt find the client entry-point.";
     }
-    const clientScript = (await client.text()).replace(/"(?:[.a-z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g, "\"/$1\"")
+    const clientScript = (await client.text()).replace(/"(?:[.a-z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g, '"/$1"');
 
     console.timeEnd("Compilation done!");
     return {
         client: clientScript,
-        outputs: Object.fromEntries(result.outputs.map(b => ([b.path.slice(7), b]))),
+        outputs: Object.fromEntries(result.outputs.map((b) => [b.path.slice(7), b])),
     };
 }
 
 function createRouter({ cwd }: ServerOptions) {
-    const files = Array.from(routerGlob.scanSync({ cwd: cwd + "/src/routes"})).map(parse);
+    const files = Array.from(routerGlob.scanSync({ cwd: `${cwd}/src/routes` })).map(parse);
     const router: RouteFragment = { pathname: "/" };
 
     for (const path of files) {
         const dir = path.dir.split("/").map((p) => `/${p}`);
 
         const parentRoute: Route = dir.reduce((parent, path, i) => {
-            if (path === "/") return parent
+            if (path === "/") return parent;
             if (!parent.routes) {
                 parent.routes = {};
             }
@@ -170,7 +178,13 @@ function createRouter({ cwd }: ServerOptions) {
             return parent.routes[path];
         }, router);
 
-        if (path.name === "page" || path.name === "layout" || path.name === "loading" || path.name === "error" || path.name === "notFound") {
+        if (
+            path.name === "page" ||
+            path.name === "layout" ||
+            path.name === "loading" ||
+            path.name === "error" ||
+            path.name === "notFound"
+        ) {
             const sourcefilePath = format({ ...path, base: path.name });
             parentRoute[path.name] = lazy(() => import(`${cwd}/src/routes/${sourcefilePath}`));
         }
@@ -206,21 +220,21 @@ type ClientRoutes = {
     layout: boolean;
     page: boolean;
     routes?: Record<string, ClientRoutes>;
-}
+};
 function routerToClient(route: Route): ClientRoutes | null {
     if (!route.page && !route.routes) return null;
 
-    const r:ClientRoutes = {
+    const r: ClientRoutes = {
         page: !!route.page,
         layout: !!route.layout,
     };
-    
+
     if (route.routes) {
         for (const [url, subroute] of Object.entries(route.routes)) {
             const clientSubroute = routerToClient(subroute);
-            if (!clientSubroute) continue
-            if (!r.routes) r.routes = {}
-            r.routes[url] = clientSubroute
+            if (!clientSubroute) continue;
+            if (!r.routes) r.routes = {};
+            r.routes[url] = clientSubroute;
         }
     }
 

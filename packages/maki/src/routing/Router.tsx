@@ -1,44 +1,46 @@
 import { type ReactNode, Suspense, createContext, useContext, useMemo, useState } from "react";
 
 interface AppRouter {
-    push(href: string): void
-    preload(href: string): void
-    get href(): string
+    push(href: string): void;
+    preload(href: string): void;
+    get href(): string;
 }
 
 const RouterContext = createContext<AppRouter | null>(null);
 
-type RouterProps = { children: ReactNode; initial :{pathname: string} }
+type RouterProps = { children: ReactNode; initial: { pathname: string } };
 export default function Router({ children, initial }: RouterProps) {
     const [pathname, setPathname] = useState(initial.pathname);
 
-    const appRouter = useMemo<AppRouter>(() => ({
-        push(href) {
-            setPathname(href);
-            window.history.pushState({}, "", href);
-        },
-        preload(href) {
-            // preloadModule(href, { as: "script" });
-        },
-        get href() : string {
-            return pathname
-        }
-        
-    }), [pathname, setPathname])
+    const appRouter = useMemo<AppRouter>(
+        () => ({
+            push(href) {
+                setPathname(href);
+                window.history.pushState({}, "", href);
+            },
+            preload(href) {
+                // preloadModule(href, { as: "script" });
+            },
+            get href(): string {
+                return pathname;
+            },
+        }),
+        [pathname],
+    );
 
     return (
-        <html>
-        <head>
-            <meta charSet="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1" />
-            {/* <link rel="stylesheet" href="/styles.css"></link> */}
-            <title>My app</title>
-        </head>
+        <html lang="en">
+            <head>
+                <meta charSet="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                {/* <link rel="stylesheet" href="/styles.css"></link> */}
+                <title>My app</title>
+            </head>
 
-        <body>
-            <RouterContext.Provider value={appRouter}>{children}</RouterContext.Provider>
-        </body>
-      </html>
+            <body>
+                <RouterContext.Provider value={appRouter}>{children}</RouterContext.Provider>
+            </body>
+        </html>
     );
 }
 

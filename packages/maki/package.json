@@ -5,9 +5,13 @@
     "maki": "./src/bin/maki.ts"
   },
   "exports": {
+    ".": {
+      "types": "./index.ts",
+      "import": "./index.ts"
+    },
     "./routing": {
-      "types": "./src/routing/Link.tsx",
-      "import": "./src/routing/Link.tsx"
+      "types": "./routing.ts",
+      "import": "./routing.ts"
     },
     "./package.json": "./package.json"
   },
