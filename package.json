@@ -1,0 +1,14 @@
+{
+  "name": "framework",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^1.7.1",
+    "@types/bun": "latest"
+  },
+  "trustedDependencies": [
+    "@biomejs/biome"
+  ]
+}

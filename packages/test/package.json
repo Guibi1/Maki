@@ -1,0 +1,17 @@
+{
+  "name": "test",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "bunx maki dev"
+  },
+  "dependencies": {
+    "maki": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
