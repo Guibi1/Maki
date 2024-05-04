@@ -2,11 +2,10 @@
 
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
-const program = new Command();
 
-program.name("maki").description("CLI to some JavaScript string utilities").version("0.0.x");
+const commander = new Command().name("maki").description("CLI to some JavaScript string utilities").version("0.0.x");
 
-program
+commander
     .command("dev")
     .description("Starts Maki.js in development mode.")
     .argument(
@@ -27,4 +26,4 @@ program
     })
     .usage("[directory] [options]");
 
-program.parse();
+commander.parse();

@@ -1,7 +1,7 @@
+import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
+import { jsx } from "@/utils";
 import { Fragment, type ReactNode, lazy } from "react";
 import { hydrateRoot } from "react-dom/client";
-import Router, { LayoutRoute, PageRoute } from "../routing/Router";
-import { jsx } from "../utils";
 
 declare global {
     interface Window {

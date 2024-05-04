@@ -3,7 +3,7 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "dev": "bunx maki dev"
+    "dev": "maki dev"
   },
   "dependencies": {
     "maki": "workspace:*",

@@ -1,30 +1,33 @@
 {
-  "name": "maki",
-  "type": "module",
-  "bin": {
-    "maki": "./src/bin/maki.ts"
-  },
-  "exports": {
-    ".": {
-      "types": "./index.ts",
-      "import": "./index.ts"
+    "name": "maki",
+    "type": "module",
+    "bin": {
+        "maki": "./src/bin/maki.ts"
     },
-    "./routing": {
-      "types": "./routing.ts",
-      "import": "./routing.ts"
+    "exports": {
+        ".": {
+            "types": "./index.ts",
+            "default": "./index.ts"
+        },
+        "./routing": {
+            "types": "./routing.ts",
+            "react-server": "./routing.react-server.ts",
+            "default": "./routing.ts"
+        },
+        "./package.json": "./package.json"
     },
-    "./package.json": "./package.json"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/react-dom": "^18.3.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "commander": "^12.0.0",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0"
-  }
+    "devDependencies": {
+        "@types/bun": "latest",
+        "@types/react-dom": "^18.3.0"
+    },
+    "peerDependencies": {
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@maki/config": "workspace:*",
+        "commander": "^12.0.0",
+        "react": "next",
+        "react-dom": "next",
+        "react-server-dom-esm": "workspace:*"
+    }
 }
