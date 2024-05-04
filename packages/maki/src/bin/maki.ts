@@ -1,7 +1,10 @@
 #!/usr/bin/env bun
 
 import { resolve } from "node:path";
+import rscImportConditionPlugin from "@/rscImportConditionPlugin";
 import { Command, Option } from "commander";
+
+Bun.plugin(rscImportConditionPlugin);
 
 const commander = new Command().name("maki").description("CLI to some JavaScript string utilities").version("0.0.x");
 

@@ -1,13 +1,13 @@
 import { watch } from "node:fs";
 import { format, parse } from "node:path";
-import { Readable } from "node:stream";
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
 import type { MakiConfig } from "@/types";
 import { jsx } from "@/utils";
 import type { Server } from "bun";
 import { Fragment, type ReactNode, lazy } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import * as ReactServerDom from "react-server-dom-esm/client.node";
+import { createFromNodeStream } from "react-server-dom-esm/client.node";
+import { renderServerComponents } from "./react-server-dom";
 
 // TODO: handle endpoints
 // TODO: typesafe endpoints
@@ -15,21 +15,6 @@ import * as ReactServerDom from "react-server-dom-esm/client.node";
 // TODO: error boundaries
 // TODO: good routing
 // TODO: rsc
-
-const streamTest = new Readable();
-
-const rsc = Bun.spawn({
-    cmd: ["bun", "--conditions", "react-server", `${import.meta.dir}/rsc.ts`],
-    cwd: process.cwd(),
-    env: process.env,
-    ipc(message, subprocess) {
-        if (message.type === "log") {
-            console.log(message.data);
-        } else if (message.type === "rsc") {
-            streamTest.push(message.data);
-        }
-    },
-});
 
 const routerGlob = new Bun.Glob("**/{page,layout,loading,error,notFound}.{tsx,jsx,ts,js}");
 const endpointGlob = new Bun.Glob("**/{server.{ts,js}");
@@ -87,30 +72,25 @@ export async function createServer(options: ServerOptions) {
             }
 
             // * SERVER SIDE RENDER *
-            return await (async () => {
-                try {
-                    rsc.send("");
-                    await Bun.sleep(1000);
-                    const App = jsx(() => ReactServerDom.createFromNodeStream(streamTest, "/@maki", "/@maki"), {});
-                    console.log(streamTest.read());
+            try {
+                const App = jsx(() => createFromNodeStream(renderServerComponents(req), "/@maki", "/@maki"), {});
 
-                    const page = jsx(Router, { initial: { pathname: url.pathname } }, App);
-                    console.log("🚀 ~ fetch ~ page:", page);
+                const page = jsx(Router, { initial: { pathname: url.pathname } }, App);
+                console.log("🚀 ~ fetch ~ page:", page);
 
-                    // // const page = createReactTree(router, url.pathname);
-                    const stream = await renderToReadableStream(page, {
-                        bootstrapModules: ["/@maki/_client"],
-                        bootstrapScriptContent: `window.maki = ${JSON.stringify({
-                            routes: routerToClient(router) ?? {},
-                        })};`,
-                    });
+                // // const page = createReactTree(router, url.pathname);
+                const stream = await renderToReadableStream(page, {
+                    bootstrapModules: ["/@maki/_client"],
+                    bootstrapScriptContent: `window.maki = ${JSON.stringify({
+                        routes: routerToClient(router) ?? {},
+                    })};`,
+                });
 
-                    return new Response(stream, { headers: { "content-type": "text/html" } });
-                } catch (e) {
-                    console.error(e);
-                    throw "Render error: invalid React component";
-                }
-            })();
+                return new Response(stream, { headers: { "Content-Type": "text/html" } });
+            } catch (e) {
+                console.error(e);
+                throw "Render error: invalid React component";
+            }
         },
         websocket: {
             open(ws) {
