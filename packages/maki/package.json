@@ -17,17 +17,18 @@
         "./package.json": "./package.json"
     },
     "devDependencies": {
+        "@maki/config": "workspace:*",
         "@types/bun": "latest",
-        "@types/react-dom": "^18.3.0"
+        "@types/react": "npm:types-react@beta",
+        "@types/react-dom": "npm:types-react-dom@beta"
     },
     "peerDependencies": {
+        "react": "next",
+        "react-dom": "next",
         "typescript": "^5.0.0"
     },
     "dependencies": {
-        "@maki/config": "workspace:*",
         "commander": "^12.0.0",
-        "react": "next",
-        "react-dom": "next",
         "react-server-dom-esm": "workspace:*"
     }
 }

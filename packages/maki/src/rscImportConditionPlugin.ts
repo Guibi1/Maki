@@ -7,7 +7,7 @@ import type { BunPlugin } from "bun";
 const rscImportConditionPlugin: BunPlugin = {
     name: "Maki RSC import condition",
     async setup(build) {
-        build.onLoad({ filter: /\/react-server-dom.ts$/ }, async ({ path }) => {
+        build.onLoad({ filter: /\/react-server-dom\.ts$/ }, async ({ path }) => {
             const output = await Bun.build({
                 entrypoints: [path],
                 target: "bun",

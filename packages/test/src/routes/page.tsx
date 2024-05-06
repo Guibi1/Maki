@@ -1,5 +1,5 @@
 import Link from "maki/routing";
-import Test from "./Test";
+import Counter from "./Counter";
 
 export default function App() {
     return (
@@ -8,7 +8,7 @@ export default function App() {
                 <Link href="/nested">go deep</Link>
             </div>
 
-            <Test />
+            <Counter />
 
             <p suppressHydrationWarning={true}>{new Date().toISOString()}</p>
             <p>HMR WORaaKS!</p>

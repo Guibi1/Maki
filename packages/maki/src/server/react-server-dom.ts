@@ -1,24 +1,24 @@
 import { resolve } from "node:path";
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import type { ReactNode } from "react";
-import type { PipeableStream } from "react-dom/server";
 // import busboy from "busboy";
 import { decodeReply, decodeReplyFromBusboy, renderToPipeableStream } from "react-server-dom-esm/server.node";
 
 const moduleBaseURL = "/@maki/";
 
-export async function renderServerComponents(req: Request): Promise<PipeableStream> {
+export async function renderServerComponents(req: Request): Promise<PassThrough> {
     const url = new URL(req.url);
     const path = url.pathname === "/" ? "" : url.pathname;
 
     const props = Object.fromEntries(url.searchParams.entries()); // We will use the query as props for the page
     let mod: ReactNode;
     try {
-        mod = (await import("../../../test/src/routes/page")).default();
+        mod = (await import("../../../test/src/routes/nested/page")).default();
     } catch {
         mod = "Not Found";
     }
-    return renderToPipeableStream(mod, moduleBaseURL);
+
+    return renderToPipeableStream(mod, moduleBaseURL).pipe(new PassThrough());
 }
 
 export async function handleServerAction(req: Request) {

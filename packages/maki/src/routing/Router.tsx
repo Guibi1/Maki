@@ -1,4 +1,5 @@
-import { type ReactNode, Suspense, createContext, useContext, useMemo, useState } from "react";
+"use client";
+import { type ReactNode, Suspense, createContext, use, useMemo, useState } from "react";
 
 interface AppRouter {
     push(href: string): void;
@@ -38,14 +39,14 @@ export default function Router({ children, initial }: RouterProps) {
             </head>
 
             <body>
-                <RouterContext.Provider value={appRouter}>{children}</RouterContext.Provider>
+                <RouterContext value={appRouter}>{children}</RouterContext>
             </body>
         </html>
     );
 }
 
 const useRouter = () => {
-    const router = useContext(RouterContext);
+    const router = use(RouterContext);
     if (!router) throw "Router not mounted...";
     return router;
 };

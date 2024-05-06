@@ -1,13 +1,14 @@
 import { watch } from "node:fs";
-import { format, parse } from "node:path";
+import { format, parse, relative } from "node:path";
+import { Readable, Writable } from "node:stream";
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
 import type { MakiConfig } from "@/types";
-import { jsx } from "@/utils";
+import { createElement, pipeToReadableStream } from "@/utils";
 import type { Server } from "bun";
 import { Fragment, type ReactNode, lazy } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
-import { renderServerComponents } from "./react-server-dom";
+import { handleServerAction, renderServerComponents } from "./react-server-dom";
 
 // TODO: handle endpoints
 // TODO: typesafe endpoints
@@ -31,8 +32,22 @@ export async function createServer(options: ServerOptions) {
     const server: Server = Bun.serve({
         async fetch(req) {
             const url = new URL(req.url, server.url);
-            const method = (req.headers.get("METHOD") as Method) ?? "GET";
+            const method = (req.headers.get("METHOD")?.toUpperCase() as Method) ?? "GET";
             console.log("New request:", url.pathname);
+
+            // * SERVER COMPONENTS *
+            if (method === "GET" && url.pathname.startsWith("/@maki/jsx/")) {
+                const pathname = url.pathname.slice(10);
+                const stream = await renderServerComponents(req);
+                return new Response(pipeToReadableStream(stream), { headers: { "Content-Type": "text/x-component" } });
+            }
+
+            // * SERVER ACTIONS *
+            if (method === "POST" && url.pathname.startsWith("/@maki/actions/")) {
+                console.log("REACT SERVER ACTION CALLED", url.pathname);
+                // handleServerAction(req);
+                throw "RSA not implemented :(";
+            }
 
             // * BUILD *
             if (method === "GET" && url.pathname.startsWith("/@maki/")) {
@@ -73,12 +88,12 @@ export async function createServer(options: ServerOptions) {
 
             // * SERVER SIDE RENDER *
             try {
-                const App = jsx(() => createFromNodeStream(renderServerComponents(req), "/@maki", "/@maki"), {});
+                const App = createFromNodeStream(await renderServerComponents(req), "/@maki", "/@maki");
 
-                const page = jsx(Router, { initial: { pathname: url.pathname } }, App);
-                console.log("🚀 ~ fetch ~ page:", page);
-
+                const page: ReactNode = createElement(Router, { initial: { pathname: url.pathname }, children: App });
                 // // const page = createReactTree(router, url.pathname);
+
+                // @ts-ignore
                 const stream = await renderToReadableStream(page, {
                     bootstrapModules: ["/@maki/_client"],
                     bootstrapScriptContent: `window.maki = ${JSON.stringify({
@@ -120,6 +135,7 @@ export async function createServer(options: ServerOptions) {
     return server;
 }
 
+type ReactDirective = "server" | "client";
 async function buildProject({ cwd }: ServerOptions) {
     const config = (await import(`${cwd}/maki.config`)).default as MakiConfig;
 
@@ -132,7 +148,6 @@ async function buildProject({ cwd }: ServerOptions) {
         root: `${cwd}/src`,
         target: "browser",
         sourcemap: "inline",
-        plugins: config.plugins,
         splitting: true,
         minify: true,
         naming: {
@@ -140,6 +155,45 @@ async function buildProject({ cwd }: ServerOptions) {
             chunk: "./@maki/chunks/[hash].[ext]",
             asset: "./@maki/assets/[name]-[hash].[ext]",
         },
+        plugins: [
+            {
+                name: "Maki React Register",
+                setup(build) {
+                    function exportToJsx(exportName: string, path: string, directive: ReactDirective) {
+                        const id = `/${relative(cwd, path)
+                            .replace("src", "build")
+                            .replace(/\..+$/, ".js")}#${exportName}`; // React uses this to identify the component
+                        const mod = `${exportName === "default" ? parse(path).name : ""}_${exportName}`; // We create a unique name for the component export
+
+                        if (directive === "server") {
+                            // In case the of a server components, we add properties to a mock up function to avoid shipping the code to the client
+                            return `const ${mod}=()=>{throw new Error("This function is expected to only run on the server")};${mod}.$$typeof=Symbol.for("react.server.reference");${mod}.$$id="${id}";${mod}.$$bound=null; export {${mod} as ${exportName}};`;
+                        }
+
+                        return `const ${mod}={$$typeof:Symbol.for("react.client.reference"),$$id:"${id}",$$async:true}; export {${mod} as ${exportName}};`;
+                    }
+
+                    const transpiler = new Bun.Transpiler({ loader: "tsx" });
+
+                    build.onLoad({ filter: /\.[tj]sx?$/ }, async (args) => {
+                        const file = await Bun.file(args.path).text();
+
+                        const directive = file.match(/^[\s\n;]*(["`'])use (client|server)\1/);
+                        if (!directive) return { contents: file }; // If there are no directives, we let it be bundled
+
+                        const { exports } = transpiler.scan(file);
+                        if (exports.length === 0) return { contents: file }; // If there are no exports, we also let it be bundled
+
+                        return {
+                            contents: exports
+                                .map((e) => exportToJsx(e, args.path, directive[2] as ReactDirective))
+                                .join("\n"),
+                        };
+                    });
+                },
+            },
+            ...config.plugins,
+        ],
     });
 
     if (!result.success) {
@@ -255,13 +309,20 @@ function createReactTree(router: Route, pathname: string) {
         const subroutes = route.routes
             ? Object.entries(route.routes).map(([dir, subroute]) => routeToReact(subroute, url + dir))
             : null;
-        const page = route.page ? jsx(PageRoute, { url }, jsx(route.page, { params: {} })) : null;
+        const page = route.page
+            ? createElement(PageRoute, { url, children: createElement(route.page, { params: {} }) })
+            : null;
 
-        if (!route.layout) return jsx(Fragment, { key: url }, page, subroutes);
-        return jsx(LayoutRoute, { url, key: url }, jsx(route.layout, { params: {} }, page, subroutes));
+        const children = subroutes ? subroutes.concat(page) : page;
+        if (!route.layout) return createElement(Fragment, { key: url, children });
+        return createElement(LayoutRoute, {
+            url,
+            key: url,
+            children: createElement(route.layout, { params: {}, children }),
+        });
     }
 
-    return jsx(Router, { initial: { pathname } }, routeToReact(router, ""));
+    return createElement(Router, { initial: { pathname }, children: routeToReact(router, "") });
 }
 
 function routeIsSlug(route: Route): route is SlugRouteFragment {

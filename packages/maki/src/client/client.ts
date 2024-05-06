@@ -1,7 +1,8 @@
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
-import { jsx } from "@/utils";
+import { createElement } from "@/utils";
 import { Fragment, type ReactNode, lazy } from "react";
 import { hydrateRoot } from "react-dom/client";
+import { createFromFetch } from "react-server-dom-esm/client";
 
 declare global {
     interface Window {
@@ -14,6 +15,8 @@ type Route = {
     page: boolean;
     routes?: Record<string, Route>;
 };
+
+const moduleBaseURL = "/build/";
 
 function createReactTree() {
     const baseUrl = new URL("/@maki/routes", window.location.origin).toString();
@@ -28,33 +31,50 @@ function createReactTree() {
             ? Object.entries(route.routes).map(([dir, subroute]) => routeToReact(subroute, url + dir))
             : null;
         const page = route.page
-            ? jsx(
-                  PageRoute,
-                  { url: url },
-                  jsx(
+            ? createElement(PageRoute, {
+                  url: url,
+                  children: createElement(
                       lazy(() => import(`${baseUrl}${url}/page.js`)),
                       { params: {} },
                   ),
-              )
+              })
             : null;
 
-        if (!route.layout) return jsx(Fragment, { key: url }, page, subroutes);
-        return jsx(
-            LayoutRoute,
-            { url, key: url },
-            jsx(
+        if (!route.layout) return createElement(Fragment, { key: url, children: [page, subroutes] });
+        return createElement(LayoutRoute, {
+            url,
+            key: url,
+            children: createElement(
                 lazy(() => import(`${baseUrl}${url}/layout.js`)),
-                { params: {} },
-                page,
-                subroutes,
+                { params: {}, children: [page, subroutes] },
             ),
-        );
+        });
     }
 
-    return jsx(Router, { initial: { pathname: window.location.pathname } }, routeToReact(window.maki.routes, ""));
+    return createElement(Router, {
+        initial: { pathname: window.location.pathname },
+        children: routeToReact(window.maki.routes, ""),
+    });
 }
 
-const root = hydrateRoot(document, createReactTree());
+async function callServer(id: string, args: unknown[]) {
+    return (
+        await createFromFetch(
+            fetch("/@maki/actions", {
+                method: "POST",
+                // body: await encodeReply(args),
+                headers: {
+                    "rsa-origin": location.pathname, // Tells the server where the call is coming from
+                    "rsa-reference": id, // Tells the server which action is being called
+                },
+            }),
+            { callServer, moduleBaseURL },
+        )
+    ).returnValue;
+}
+
+const page = createFromFetch(fetch(`/@maki/jsx${location.pathname}`), { callServer, moduleBaseURL });
+const root = hydrateRoot(document, page);
 
 const ws = new WebSocket(new URL("/@maki/_ws", `ws://${window.location.host}`));
 ws.addEventListener("message", async ({ data }) => {
