@@ -10,7 +10,9 @@
     "maki-postcss-plugin": "workspace:*",
     "autoprefixer": "^10.4.19",
     "cssnano": "^7.0.1",
-    "tailwindcss": "^3.4.3"
+    "tailwindcss": "^3.4.3",
+    "react": "next",
+    "react-dom": "next"
   },
   "devDependencies": {
     "@types/bun": "latest"

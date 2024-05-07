@@ -1,24 +1,28 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { PassThrough, Readable } from "node:stream";
+import PageNotFound from "@/PageNotFound";
 import type { ReactNode } from "react";
 // import busboy from "busboy";
 import { decodeReply, decodeReplyFromBusboy, renderToPipeableStream } from "react-server-dom-esm/server.node";
+import type { ServerOptions } from "./server";
 
-const moduleBaseURL = "/@maki/";
+const moduleBaseURL = ".maki/";
 
-export async function renderServerComponents(req: Request): Promise<PassThrough> {
-    const url = new URL(req.url);
-    const path = url.pathname === "/" ? "" : url.pathname;
-
-    const props = Object.fromEntries(url.searchParams.entries()); // We will use the query as props for the page
+export async function renderServerComponents(pathname: string, { cwd }: ServerOptions): Promise<PassThrough> {
     let mod: ReactNode;
     try {
-        mod = (await import("../../../test/src/routes/nested/page")).default();
+        mod = (await import(join(cwd, ".maki/routes", pathname, "page.js"))).default();
     } catch {
-        mod = "Not Found";
+        mod = PageNotFound();
     }
 
-    return renderToPipeableStream(mod, moduleBaseURL).pipe(new PassThrough());
+    return renderToPipeableStream(mod, moduleBaseURL).pipe(
+        new PassThrough({
+            flush(callback) {
+                console.log("wtff");
+            },
+        }),
+    );
 }
 
 export async function handleServerAction(req: Request) {
@@ -34,7 +38,7 @@ export async function handleServerAction(req: Request) {
         const rs = webToNodeStream(req.body);
         //@ts-ignore
         const bb = busboy({ headers: Object.fromEntries(req.headers.entries()) });
-        const reply = decodeReplyFromBusboy(bb, resolve("build/") + "/");
+        const reply = decodeReplyFromBusboy(bb, `${resolve("build/")}/`);
         rs.pipe(bb);
         args = await reply;
     } else {

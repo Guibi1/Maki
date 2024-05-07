@@ -1,7 +1,7 @@
 import type { BunPlugin } from "bun";
 
 /**
- * This plugin compiles `/rsc.ts` with the "--condition react-server" flag on import, which allows a single Bun process to import `default` and `react-server` at the same time.
+ * This plugin compiles `/react-server-dom.ts` with the "--condition react-server" flag on import, which allows a single Bun process to import `default` and `react-server` at the same time.
  * Credit: https://github.com/rafaelrcamargo/r19/issues/4
  */
 const rscImportConditionPlugin: BunPlugin = {
@@ -12,7 +12,7 @@ const rscImportConditionPlugin: BunPlugin = {
                 entrypoints: [path],
                 target: "bun",
                 conditions: "react-server", // The magic happens here!
-                external: ["node:path", "node:stream"],
+                external: ["node:*"],
             });
 
             return {

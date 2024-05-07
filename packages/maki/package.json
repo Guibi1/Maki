@@ -19,8 +19,8 @@
     "devDependencies": {
         "@maki/config": "workspace:*",
         "@types/bun": "latest",
-        "@types/react": "npm:types-react@beta",
-        "@types/react-dom": "npm:types-react-dom@beta"
+        "@types/react": "18.3.0",
+        "@types/react-dom": "18.3.0"
     },
     "peerDependencies": {
         "react": "next",

@@ -1,6 +1,6 @@
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
 import { createElement } from "@/utils";
-import { Fragment, type ReactNode, lazy } from "react";
+import { Fragment, type ReactNode, lazy, use } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromFetch } from "react-server-dom-esm/client";
 
@@ -16,7 +16,7 @@ type Route = {
     routes?: Record<string, Route>;
 };
 
-const moduleBaseURL = "/build/";
+const moduleBaseURL = "/@maki/";
 
 function createReactTree() {
     const baseUrl = new URL("/@maki/routes", window.location.origin).toString();
@@ -74,9 +74,16 @@ async function callServer(id: string, args: unknown[]) {
 }
 
 const page = createFromFetch(fetch(`/@maki/jsx${location.pathname}`), { callServer, moduleBaseURL });
-const root = hydrateRoot(document, page);
+const root = hydrateRoot(
+    document,
+    createElement(Router, {
+        initial: { pathname: location.pathname },
+        children: createElement(({ page }) => use(page), { page }),
+    }),
+);
+console.log("🚀 ~ page:", page);
 
-const ws = new WebSocket(new URL("/@maki/_ws", `ws://${window.location.host}`));
+const ws = new WebSocket(new URL("/@maki/ws", `ws://${window.location.host}`));
 ws.addEventListener("message", async ({ data }) => {
     // root.render(createReactTree(`?t=${Date.now()}`));
     // const message = JSON.parse(data);

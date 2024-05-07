@@ -32,3 +32,7 @@ export function pipeToReadableStream(stream: Stream): ReadableStream {
         },
     });
 }
+
+declare module "react" {
+    function use<T>(data: T): T extends Context<infer P> ? P : T;
+}

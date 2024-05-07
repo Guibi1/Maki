@@ -39,28 +39,39 @@ export default function Router({ children, initial }: RouterProps) {
             </head>
 
             <body>
-                <RouterContext value={appRouter}>{children}</RouterContext>
+                {/* @ts-ignore: React 19 */}
+                <RouterContext value={appRouter}>
+                    {/* <Suspense fallback={"apploading"}> */}
+                    {children}
+                    {/* </Suspense> */}
+                </RouterContext>
             </body>
         </html>
     );
 }
 
-const useRouter = () => {
+export function useRouter() {
     const router = use(RouterContext);
-    if (!router) throw "Router not mounted...";
+    if (!router)
+        return {
+            push(href) {},
+            preload(href) {},
+            get href(): string {
+                return "/";
+            },
+        };
+    // throw "Router not mounted...";
     return router;
-};
+}
 
 // TODO: Handle slugs
 type RouteProps = { url: string; children: ReactNode };
-const PageRoute = ({ url, children }: RouteProps) => {
+export function PageRoute({ url, children }: RouteProps) {
     const router = useRouter();
     return router.href === (url || "/") ? <Suspense fallback={"page loading..."}>{children}</Suspense> : null;
-};
+}
 
-const LayoutRoute = ({ url, children }: RouteProps) => {
+export function LayoutRoute({ url, children }: RouteProps) {
     const router = useRouter();
     return router.href.startsWith(url) ? <Suspense fallback={"layout loading..."}>{children}</Suspense> : null;
-};
-
-export { LayoutRoute, PageRoute, Router, useRouter };
+}
