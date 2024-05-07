@@ -5,7 +5,7 @@ import type { MakiConfig } from "@/types";
 import { createElement, pipeToReadableStream } from "@/utils";
 import type { BuildArtifact, Server } from "bun";
 import { Fragment, type ReactNode, lazy, use } from "react";
-import { renderToReadableStream } from "react-dom/server";
+// import { renderToReadableStream } from "react-dom/server";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
 import { renderServerComponents } from "./react-server-dom";
 
@@ -62,27 +62,18 @@ export async function createServer(options: ServerOptions) {
                     return new Response(build.client, { headers: { "Content-Type": "text/javascript" } });
                 }
 
-                // const output = build.outputs[pathname];
-                // if (output) {
-                const file = Bun.file(join(options.cwd, ".maki/TESTBROWSER", pathname));
-                if (await file.exists()) {
-                    console.log("🚀 ~ fetch ~ file:", file);
-                    return new Response(file, {
-                        headers: { "Content-Type": "text/javascript" },
-                    });
-                }
-                const fissle = Bun.file(join(options.cwd, ".maki", pathname));
-                if (await fissle.exists()) {
-                    console.log("🚀 ~ fetch ~ fissle:", fissle);
-                    return new Response(fissle, {
-                        headers: { "Content-Type": "text/javascript" },
-                    });
+                if (pathname.startsWith("/_internal")) {
+                    const output = build.internalOutputs[pathname];
+                    if (output) {
+                        return new Response(output, {
+                            headers: { "Content-Type": "text/javascript" },
+                        });
+                    }
                 }
 
-                const fle = Bun.file(join(options.cwd, ".maki/TEST", pathname));
-                if (await fle.exists()) {
-                    console.log("🚀 ~ fetch ~ fle:", fle);
-                    return new Response(fle, {
+                const output = build.clientOutputs[pathname];
+                if (output) {
+                    return new Response(output, {
                         headers: { "Content-Type": "text/javascript" },
                     });
                 }
@@ -111,16 +102,14 @@ export async function createServer(options: ServerOptions) {
             try {
                 const App = createFromNodeStream(
                     await renderServerComponents(url.pathname, options),
-                    `${options.cwd}/.maki/TEST/`,
+                    `${options.cwd}/.maki/client/`,
                     "/@maki/",
                 );
 
                 // const page = createReactTree(router, url.pathname);
-                const page = createElement(Router, {
-                    initial: { pathname: url.pathname },
-                    children: createElement(({ App }) => use(App), { App }),
-                });
-                const stream = await renderToReadableStream(page, {
+
+                const { renderToReadableStream } = await import(join(options.cwd, ".maki/client/ssr.js"));
+                const stream = await renderToReadableStream(App, req.url, {
                     bootstrapModules: ["/@maki/client"],
                     bootstrapScriptContent: `window.maki = ${JSON.stringify({
                         routes: routerToClient(router) ?? {},
@@ -168,7 +157,7 @@ async function buildProject({ cwd }: ServerOptions) {
 
     const dev = true;
     console.time("Compilation done!");
-    const result = await Bun.build({
+    const serverBuild = await Bun.build({
         entrypoints: Array.from(sourceFileGlob.scanSync({ cwd: `${cwd}/src` })).map((s) => `${cwd}/src/${s}`),
         publicPath: "./",
         root: `${cwd}/src`,
@@ -189,8 +178,9 @@ async function buildProject({ cwd }: ServerOptions) {
                         const isInternalMakiFile = path.startsWith(makiBaseDir);
 
                         const exportPath = isInternalMakiFile
-                            ? relative(makiBaseDir, path).replace("src", ".maki/internal")
+                            ? relative(makiBaseDir, path).replace("src/routing", ".maki/_internal")
                             : relative(cwd, path).replace("src", ".maki");
+                        console.log("🚀 ~ exportToJsx ~ exportPath:", exportPath);
 
                         const id = `${removeFileExtension(exportPath)}.js#${exportName}`;
                         const mod = `${exportName === "default" ? parse(path).name : ""}_${exportName}`;
@@ -225,10 +215,19 @@ async function buildProject({ cwd }: ServerOptions) {
         ],
     });
 
-    const CLINETB = await Bun.build({
+    if (!serverBuild.success) {
+        console.error("Server build failed");
+        throw new AggregateError(serverBuild.logs, "Server build failed");
+    }
+
+    const clientBuild = await Bun.build({
         entrypoints: Array.from(sourceFileGlob.scanSync({ cwd: `${cwd}/src` }))
             .map((s) => `${cwd}/src/${s}`)
-            .concat(resolve(import.meta.dir, "../client/client.ts")),
+            .concat(
+                join(makiBaseDir, "src/client/client.ts"),
+                join(makiBaseDir, "src/server/react-dom.ts"),
+                join(makiBaseDir, "/src/routing/Link.tsx"),
+            ),
         publicPath: "./",
         root: `${cwd}/src`,
         target: "browser",
@@ -240,68 +239,61 @@ async function buildProject({ cwd }: ServerOptions) {
             chunk: "./@maki/chunks/[hash].[ext]",
             asset: "./@maki/assets/[name]-[hash].[ext]",
         },
-        plugins: [...config.plugins],
+        plugins: config.plugins,
     });
 
-    if (!result.success) {
-        console.error("Bun build failed");
-        throw new AggregateError(result.logs, "Build failed");
+    if (!clientBuild.success) {
+        console.error("Client build failed");
+        throw new AggregateError(clientBuild.logs, "Client build failed");
     }
 
-    const clientBuild = CLINETB.outputs.find((o) => o.path.endsWith("/maki/src/client/client.js"));
-    if (!clientBuild) {
+    const ssrOutpout = clientBuild.outputs.find((o) => o.path.endsWith("/maki/src/server/react-dom.js"));
+    if (!ssrOutpout) {
+        throw "Build error: Couldnt find the compiled react-dom entry-point.";
+    }
+    const ssrScript = (await ssrOutpout.text()).replace(
+        /"(?:[.a-z0-9]+\/)+?@maki\/(chunks\/[a-z0-9]+\.js)"/g,
+        '"./$1"',
+    );
+    Bun.write(join(cwd, ".maki/client/ssr.js"), ssrScript);
+
+    const linkOutpout = clientBuild.outputs.find((o) => o.path.endsWith("/maki/src/routing/Link.js"));
+    if (!linkOutpout) {
+        throw "Build error: Couldnt find the compiled Link entry-point.";
+    }
+    const linkScript = (await linkOutpout.text()).replace(
+        /"(?:[.a-z0-9]+\/)+?@maki\/(chunks\/[a-z0-9]+\.js)"/g,
+        '"../$1"',
+    );
+    Bun.write(join(cwd, ".maki/client/_internal/Link.js"), linkScript);
+
+    const clientOutpout = clientBuild.outputs.find((o) => o.path.endsWith("/maki/src/client/client.js"));
+    if (!clientOutpout) {
         throw "Build error: Couldnt find the client entry-point.";
     }
-    const clientScript = (await clientBuild.text()).replace(
-        /"(?:[.a-z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g,
+    const clientScript = (await clientOutpout.text()).replace(
+        /"(?:[.a-zA-Z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g,
         '"/$1"',
     );
 
-    const outputs: [string, BuildArtifact][] = result.outputs
-        .filter((b) => b !== clientBuild)
+    const clientOutputs: [string, BuildArtifact][] = clientBuild.outputs
+        .filter((b) => b !== clientOutpout && b !== ssrOutpout && b !== linkOutpout)
         .map((b) => [b.path.slice(7), b]);
 
-    for (const [path, out] of outputs) {
-        Bun.write(join(cwd, ".maki", path), out);
+    for (const [path, out] of clientOutputs) {
+        Bun.write(join(cwd, ".maki/client", path), out);
     }
 
-    const CLINET = await Bun.build({
-        entrypoints: Array.from(sourceFileGlob.scanSync({ cwd: `${cwd}/src` })).map((s) => `${cwd}/src/${s}`),
-        publicPath: "./",
-        root: `${cwd}/src`,
-        target: "browser",
-        sourcemap: dev ? "inline" : "none",
-        splitting: true,
-        minify: !dev,
-        external: ["react", "react-dom"],
-        naming: {
-            entry: "./@maki/[dir]/[name].[ext]",
-            chunk: "./@maki/chunks/[hash].[ext]",
-            asset: "./@maki/assets/[name]-[hash].[ext]",
-        },
-        plugins: [...config.plugins],
-    });
-
-    const outputsCLI: [string, BuildArtifact][] = CLINET.outputs
-        .filter((b) => b !== clientBuild)
-        .map((b) => [b.path.slice(7), b]);
-
-    for (const [path, out] of outputsCLI) {
-        Bun.write(join(cwd, ".maki/TEST", path), out);
-    }
-
-    const outputsCLIB: [string, BuildArtifact][] = CLINETB.outputs
-        .filter((b) => b !== clientBuild)
-        .map((b) => [b.path.slice(7), b]);
-
-    for (const [path, out] of outputsCLIB) {
-        Bun.write(join(cwd, ".maki/TESTBROWSER", path), out);
+    const serverOutputs: [string, BuildArtifact][] = serverBuild.outputs.map((b) => [b.path.slice(7), b]);
+    for (const [path, out] of serverOutputs) {
+        Bun.write(join(cwd, ".maki/server", path), out);
     }
 
     console.timeEnd("Compilation done!");
     return {
         client: clientScript,
-        outputs: Object.fromEntries(outputs),
+        internalOutputs: { "/_internal/Link.js": linkScript },
+        clientOutputs: Object.fromEntries(clientOutputs),
     };
 }
 

@@ -40,11 +40,7 @@ export default function Router({ children, initial }: RouterProps) {
 
             <body>
                 {/* @ts-ignore: React 19 */}
-                <RouterContext value={appRouter}>
-                    {/* <Suspense fallback={"apploading"}> */}
-                    {children}
-                    {/* </Suspense> */}
-                </RouterContext>
+                <RouterContext value={appRouter}>{children}</RouterContext>
             </body>
         </html>
     );

@@ -1,5 +1,5 @@
+import Link from "maki/routing";
 import Counter from "./Counter";
-import Link from "./Link";
 
 export default function App() {
     return (
