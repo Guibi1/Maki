@@ -48,15 +48,7 @@ export default function Router({ children, initial }: RouterProps) {
 
 export function useRouter() {
     const router = use(RouterContext);
-    if (!router)
-        return {
-            push(href) {},
-            preload(href) {},
-            get href(): string {
-                return "/";
-            },
-        };
-    // throw "Router not mounted...";
+    if (!router) throw "Router not mounted...";
     return router;
 }
 

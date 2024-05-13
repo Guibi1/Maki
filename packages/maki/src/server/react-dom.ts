@@ -1,7 +1,7 @@
 import Router from "@/routing/Router";
 import { createElement } from "@/utils";
 import type { ReactNode } from "react";
-import ReactDomServer, { type RenderToReadableStreamOptions } from "react-dom/server";
+import { type RenderToReadableStreamOptions, renderToReadableStream as reactRender } from "react-dom/server";
 
 export async function renderToReadableStream(Page: ReactNode, url: URL, options: RenderToReadableStreamOptions) {
     const page = createElement(Router, {
@@ -9,5 +9,5 @@ export async function renderToReadableStream(Page: ReactNode, url: URL, options:
         children: Page,
     });
 
-    return await ReactDomServer.renderToReadableStream(page, options);
+    return await reactRender(page, options);
 }

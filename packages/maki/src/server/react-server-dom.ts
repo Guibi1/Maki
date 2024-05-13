@@ -16,13 +16,7 @@ export async function renderServerComponents(pathname: string, { cwd }: ServerOp
         mod = PageNotFound();
     }
 
-    return renderToPipeableStream(mod, moduleBaseURL).pipe(
-        new PassThrough({
-            flush(callback) {
-                console.log("wtff");
-            },
-        }),
-    );
+    return renderToPipeableStream(mod, moduleBaseURL).pipe(new PassThrough());
 }
 
 export async function handleServerAction(req: Request) {

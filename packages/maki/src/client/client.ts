@@ -1,6 +1,6 @@
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
 import { createElement } from "@/utils";
-import { Fragment, type ReactNode, lazy, use } from "react";
+import { Fragment, type ReactNode, lazy } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromFetch } from "react-server-dom-esm/client";
 
@@ -78,7 +78,7 @@ const root = hydrateRoot(
     document,
     createElement(Router, {
         initial: { pathname: location.pathname },
-        children: createElement(({ page }) => use(page), { page }),
+        children: page,
     }),
 );
 console.log("🚀 ~ page:", page);
