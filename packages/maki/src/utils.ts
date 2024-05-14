@@ -1,6 +1,9 @@
 import type { Stream } from "node:stream";
+import type { MakiConfig } from "@/types";
+import chalk from "chalk";
 import type { Attributes, FunctionComponent } from "react";
 import { jsx } from "react/jsx-runtime";
+import { colors } from "./log";
 
 /**
  * Creates the JSX structure to render a React Component.
@@ -33,6 +36,27 @@ export function pipeToReadableStream(stream: Stream): ReadableStream {
     });
 }
 
-declare module "react" {
-    function use<T>(data: T): T extends Context<infer P> ? P : T;
+/**
+ * Loads the maki config file of a project.
+ * @param folder The path of the folder containing the config file
+ * @returns The parsed maki config
+ */
+export async function loadMakiConfig(folder: string): Promise<MakiConfig> {
+    try {
+        const config = (await import(`${folder}/maki.config`)).default;
+        // TODO: Validate the config schema
+        return config;
+    } catch {
+        throw `Could not load the Maki config file at ${colors.link(folder)}.`;
+    }
+}
+
+/**
+ * Calculates the delta time between two `Bun.nanoseconds()` calls.
+ * @param startTime The start time of the mesure
+ * @param endTime The end time of the mesure
+ * @returns The time that the mesured operation took, in milliseconds
+ */
+export function msDeltaTime(startTime: number, endTime?: number) {
+    return Math.round(((endTime ?? Bun.nanoseconds()) - startTime) / 1_000_000);
 }

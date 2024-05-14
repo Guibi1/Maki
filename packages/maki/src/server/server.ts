@@ -1,9 +1,11 @@
 import { watch } from "node:fs";
 import { basename, format, join, parse, relative, resolve } from "node:path";
+import log, { colors } from "@/log";
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
-import type { MakiConfig } from "@/types";
-import { createElement, pipeToReadableStream } from "@/utils";
+import type { MakiConfig, Method } from "@/types";
+import { createElement, msDeltaTime, pipeToReadableStream } from "@/utils";
 import type { BuildArtifact, Server } from "bun";
+import chalk from "chalk";
 import { Fragment, type ReactNode, lazy } from "react";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
 import { renderServerComponents } from "./react-server-dom";
@@ -20,20 +22,22 @@ const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
 const routerGlob = new Bun.Glob("**/{page,layout,loading,error,notFound}.{tsx,jsx,ts,js}");
 const endpointGlob = new Bun.Glob("**/{server.{ts,js}");
 export type ServerOptions = {
+    config: MakiConfig;
     cwd: string;
-    port: number;
+    port?: number;
 };
 
 export async function createServer(options: ServerOptions) {
-    console.clear();
+    const startTime = Bun.nanoseconds();
+
     let build = await buildProject(options);
     let router = createRouter(options);
+    console.clear();
 
     const server: Server = Bun.serve({
         async fetch(req) {
             const url = new URL(req.url, server.url);
             const method = (req.headers.get("METHOD")?.toUpperCase() as Method) ?? "GET";
-            console.log("New request:", url.pathname);
 
             // * SERVER COMPONENTS *
             if (method === "GET" && url.pathname.startsWith("/@maki/jsx/")) {
@@ -70,6 +74,8 @@ export async function createServer(options: ServerOptions) {
 
                 return new Response("404", { status: 404 });
             }
+
+            log.request(method, url);
 
             // * SERVER ENDPOINTS *
             const endpoint = !"(url.pathname, method)";
@@ -116,10 +122,10 @@ export async function createServer(options: ServerOptions) {
         websocket: {
             open(ws) {
                 ws.subscribe("hmr");
-                console.log("WebSocket: HMR client connected");
+                log.hmr("Client connected");
             },
             close(ws, code, message) {
-                console.log("WebSocket: HMR client disconnected");
+                log.hmr("Client disconnected");
             },
             message(ws, message) {
                 // ws.sendText("test", true);
@@ -128,26 +134,32 @@ export async function createServer(options: ServerOptions) {
         port: options.port,
     });
 
-    const watcher = watch(`${options.cwd}/src/routes`, { recursive: true });
+    const watcher = watch(`${options.cwd}/src`, { recursive: true });
     watcher.addListener("change", async (_, file: string) => {
-        console.log(file, "modified, reloading...");
+        log.fileChange(file);
         build = await buildProject(options);
         router = createRouter(options);
 
+        console.log();
         server.publish("hmr", JSON.stringify({ type: "change", pathname: `/${parse(file).dir}` }), true);
     });
 
-    console.log("Server running on port", server.port, "\n");
+    console.log();
+    console.log(chalk.hex("#b4befe").bold(" 🍣 Maki"), chalk.dim("v0.0.1"));
+    console.log(chalk.hex("#cdd6f4")("  ↪ Local:"), colors.link(`http://${server.hostname}:${server.port}`));
+    console.log();
+
+    console.log(chalk.hex("#1e1e2e").bgHex("#a6e3a1")(" Ready "), `in ${msDeltaTime(startTime)}ms`);
+
     return server;
 }
 
 type ReactDirective = "server" | "client";
-async function buildProject({ cwd }: ServerOptions) {
-    const config = (await import(`${cwd}/maki.config`)).default as MakiConfig;
+async function buildProject({ cwd, config }: ServerOptions) {
+    const startTime = Bun.nanoseconds();
     const clientComponents = new Set<string>();
 
     const production = true; // Disabling production disables minifying which triggers a bundling error
-    console.time("Compilation done!");
 
     // * Server components * //
     const serverBuild = await Bun.build({
@@ -287,7 +299,8 @@ async function buildProject({ cwd }: ServerOptions) {
         Bun.write(join(cwd, ".maki/client", path), output);
     }
 
-    console.timeEnd("Compilation done!");
+    log.buildComplete(startTime, "Compilation done");
+
     return {
         client: clientScript,
         outputs,
@@ -333,8 +346,6 @@ function createRouter({ cwd }: ServerOptions) {
 
     return router;
 }
-
-type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
 type ServerEndpoint = () => unknown;
 type ReactPage = (props: { params: UrlParams }) => ReactNode;

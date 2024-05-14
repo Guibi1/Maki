@@ -2,6 +2,7 @@
 
 import { resolve } from "node:path";
 import rscImportConditionPlugin from "@/rscImportConditionPlugin";
+import { loadMakiConfig } from "@/utils";
 import { Command, Option } from "commander";
 
 Bun.plugin(rscImportConditionPlugin);
@@ -23,9 +24,13 @@ commander
             .env("PORT"),
     )
     .option("-H, --hostname <hostname>", "Specify a hostname on which to start the application (default: 0.0.0.0).")
-    .action(async (directory: string, options) => {
+    .action(async (directory: string, cliFlags: Record<string, unknown>) => {
         const { createServer } = await import("../server/server");
-        createServer({ cwd: resolve(process.cwd(), directory), ...options });
+
+        const cwd = resolve(process.cwd(), directory);
+        const config = await loadMakiConfig(cwd);
+
+        createServer({ cwd, config, ...cliFlags });
     })
     .usage("[directory] [options]");
 
