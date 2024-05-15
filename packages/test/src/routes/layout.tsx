@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Counter from "./Counter";
+import Counter from "../components/Counter";
 import "./main.css";
 
 export default function NestedLayout({ children }: { children: ReactNode }) {

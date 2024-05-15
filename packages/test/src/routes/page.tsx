@@ -1,6 +1,8 @@
+import Counter from "@/components/Counter";
 import Link from "maki/routing";
-import Counter from "./Counter";
-// import Style from "./main.css";
+// import "./main.css";
+import Style from "./main.css";
+import Maki from "./maki.svg";
 
 export default function App() {
     return (
@@ -13,9 +15,13 @@ export default function App() {
             <Counter />
 
             <p suppressHydrationWarning={true}>{new Date().toISOString()}</p>
-            <p className="font-bold p-2 ring-1">HMR WORaaKS!</p>
+            {/* <p className="font-bold p-2 ring-1">HMR WORaaKS!</p> */}
 
-            {/* <Style /> */}
+            <img src={Maki} alt="maki" />
+
+            <head>
+                <link rel="stylesheet" href={Style} />
+            </head>
         </>
     );
 }

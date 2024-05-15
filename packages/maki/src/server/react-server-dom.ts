@@ -11,8 +11,9 @@ const moduleBaseURL = ".maki/";
 export async function renderServerComponents(pathname: string, { cwd }: ServerOptions): Promise<PassThrough> {
     let mod: ReactNode;
     try {
-        mod = (await import(join(cwd, ".maki/server/routes", pathname, "page.js"))).default();
-    } catch {
+        mod = (await import(join(cwd, ".maki/src/routes", pathname, "page.js"))).default();
+    } catch (e) {
+        console.log("🚀 ~ renderServerComponents ~ mod:", mod, e);
         mod = PageNotFound();
     }
 

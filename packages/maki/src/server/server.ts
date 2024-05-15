@@ -6,6 +6,7 @@ import type { MakiConfig, Method } from "@/types";
 import { createElement, msDeltaTime, pipeToReadableStream } from "@/utils";
 import type { BuildArtifact, Server } from "bun";
 import chalk from "chalk";
+import mime from "mime/lite";
 import { Fragment, type ReactNode, lazy } from "react";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
 import { renderServerComponents } from "./react-server-dom";
@@ -30,9 +31,8 @@ export type ServerOptions = {
 export async function createServer(options: ServerOptions) {
     const startTime = Bun.nanoseconds();
 
-    let build = await buildProject(options);
+    let build = await buildProject(options, false);
     let router = createRouter(options);
-    console.clear();
 
     const server: Server = Bun.serve({
         async fetch(req) {
@@ -67,9 +67,7 @@ export async function createServer(options: ServerOptions) {
 
                 const output = build.outputs[pathname];
                 if (output) {
-                    return new Response(output, {
-                        headers: { "Content-Type": "text/javascript" },
-                    });
+                    return new Response(output);
                 }
 
                 return new Response("404", { status: 404 });
@@ -155,9 +153,10 @@ export async function createServer(options: ServerOptions) {
 }
 
 type ReactDirective = "server" | "client";
-async function buildProject({ cwd, config }: ServerOptions) {
+async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     const startTime = Bun.nanoseconds();
     const clientComponents = new Set<string>();
+    const outputs: Record<string, Blob> = {};
 
     const production = true; // Disabling production disables minifying which triggers a bundling error
 
@@ -168,15 +167,15 @@ async function buildProject({ cwd, config }: ServerOptions) {
         sourcemap: production ? "none" : "inline",
         minify: production,
 
+        outdir: join(cwd, ".maki"),
         target: "browser",
         splitting: true,
         naming: {
-            entry: "./@maki/[dir]/[name].[ext]",
-            chunk: "./@maki/chunks/[hash].[ext]",
+            entry: "./src/[dir]/[name].[ext]",
+            chunk: "./chunks/[hash].[ext]",
             asset: "./@maki/assets/[name]-[hash].[ext]",
         },
 
-        publicPath: "./",
         plugins: [
             {
                 name: "Maki React Register",
@@ -226,9 +225,11 @@ async function buildProject({ cwd, config }: ServerOptions) {
         throw new AggregateError(serverBuild.logs, "Server build failed");
     }
 
-    const serverOutputs: [string, BuildArtifact][] = serverBuild.outputs.map((b) => [b.path.slice(7), b]);
-    for (const [path, out] of serverOutputs) {
-        Bun.write(join(cwd, ".maki/server", path), out);
+    for (const output of serverBuild.outputs) {
+        if (output.kind === "asset") {
+            const path = relative(cwd, output.path).slice(11);
+            outputs[path] = new Blob([output], { type: mime.getType(path) || output.type });
+        }
     }
 
     // * Client components * //
@@ -241,6 +242,7 @@ async function buildProject({ cwd, config }: ServerOptions) {
         sourcemap: production ? "none" : "inline",
         minify: production,
 
+        // outdir: join(cwd, ".maki"),
         target: "browser",
         splitting: true,
         naming: {
@@ -276,7 +278,6 @@ async function buildProject({ cwd, config }: ServerOptions) {
         .replace(/"(?:\.{1,2}\/)+(?:[a-zA-Z0-9]+\/)+([a-zA-Z0-9]+\.js)"/g, '"/@maki/_internal/$1"')
         .replace(/"(?:[.a-zA-Z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g, '"/$1"');
 
-    const outputs: Record<string, BuildArtifact | string> = {};
     for (const output of clientBuild.outputs) {
         if (output === clientOutput || output === ssrOutpout) continue;
         const path = output.path.slice(7);
@@ -291,7 +292,7 @@ async function buildProject({ cwd, config }: ServerOptions) {
             );
 
             Bun.write(join(cwd, `.maki/client/_internal/${basename(path)}`), source);
-            outputs[`/_internal/${basename(path)}`] = source;
+            outputs[`/_internal/${basename(path)}`] = new Blob([source]);
             continue;
         }
 
@@ -299,7 +300,7 @@ async function buildProject({ cwd, config }: ServerOptions) {
         Bun.write(join(cwd, ".maki/client", path), output);
     }
 
-    log.buildComplete(startTime, "Compilation done");
+    if (logs) log.buildComplete(startTime, "Compilation done");
 
     return {
         client: clientScript,
