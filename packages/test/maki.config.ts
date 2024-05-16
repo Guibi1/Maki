@@ -7,8 +7,7 @@ import tailwind from "tailwindcss";
 import tailwindNesting from "tailwindcss/nesting";
 
 const config: MakiConfig = {
-    plugins: [],
-    // plugins: [makiTailwindPlugin({ plugins: [autoprefixer(), tailwindNesting(), tailwind(), cssnano()] })],
+    plugins: [makiTailwindPlugin({ plugins: [autoprefixer(), tailwindNesting(), tailwind(), cssnano()] })],
 };
 
 export default config;

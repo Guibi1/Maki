@@ -6,7 +6,7 @@ import { createFromFetch } from "react-server-dom-esm/client";
 
 declare global {
     interface Window {
-        maki: { routes: Route };
+        maki: { routes: Route; navigate: (pathname: string) => void };
     }
 }
 
@@ -57,6 +57,15 @@ function createReactTree() {
     });
 }
 
+function createTree(pathname: string) {
+    const page = createFromFetch(fetch(`/@maki/jsx${pathname}`), { callServer, moduleBaseURL });
+    console.log("🚀 ~ createTree ~ page:", page);
+    return createElement(Router, {
+        initial: { pathname },
+        children: page,
+    });
+}
+
 async function callServer(id: string, args: unknown[]) {
     return (
         await createFromFetch(
@@ -73,15 +82,11 @@ async function callServer(id: string, args: unknown[]) {
     ).returnValue;
 }
 
-const page = createFromFetch(fetch(`/@maki/jsx${location.pathname}`), { callServer, moduleBaseURL });
-const root = hydrateRoot(
-    document,
-    createElement(Router, {
-        initial: { pathname: location.pathname },
-        children: page,
-    }),
-);
-console.log("🚀 ~ page:", page);
+const root = hydrateRoot(document, createTree(location.pathname));
+
+window.maki.navigate = (pathname: string) => {
+    root.render(createTree(pathname));
+};
 
 const ws = new WebSocket(new URL("/@maki/ws", `ws://${window.location.host}`));
 ws.addEventListener("message", async ({ data }) => {

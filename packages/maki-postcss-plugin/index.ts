@@ -8,13 +8,14 @@ export default function makiPostCssPlugin(options: MakiPostCssPluginOptions): Bu
     return {
         name: "Maki PostCSS",
         async setup(build) {
-            build.onLoad({ filter: /\.css$/ }, async (args) => {
+            build.onLoad({ filter: /\.(post)?css$/ }, async (args) => {
+                console.log("🚀 ~ postcss.onLoad ~ args:", args);
                 const css = await Bun.file(args.path).text();
                 const result = await processor.process(css, { from: args.path });
 
                 return {
                     contents: result.css,
-                    loader: "file",
+                    loader: "text",
                 };
             });
         },

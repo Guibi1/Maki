@@ -1,6 +1,5 @@
 import type { Stream } from "node:stream";
 import type { MakiConfig } from "@/types";
-import chalk from "chalk";
 import type { Attributes, FunctionComponent } from "react";
 import { jsx } from "react/jsx-runtime";
 import { colors } from "./log";

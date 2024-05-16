@@ -4,9 +4,8 @@ import log, { colors } from "@/log";
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
 import type { MakiConfig, Method } from "@/types";
 import { createElement, msDeltaTime, pipeToReadableStream } from "@/utils";
-import type { BuildArtifact, Server } from "bun";
+import type { Server } from "bun";
 import chalk from "chalk";
-import mime from "mime/lite";
 import { Fragment, type ReactNode, lazy } from "react";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
 import { renderServerComponents } from "./react-server-dom";
@@ -173,7 +172,6 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
         naming: {
             entry: "./src/[dir]/[name].[ext]",
             chunk: "./chunks/[hash].[ext]",
-            asset: "./@maki/assets/[name]-[hash].[ext]",
         },
 
         plugins: [
@@ -216,6 +214,22 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
                     });
                 },
             },
+            {
+                name: "Maki Asset Handler",
+                setup(build) {
+                    build.onLoad({ filter: /.+/ }, (args) => {
+                        if (args.namespace !== "file" || !["css", "js", "file"].includes(args.loader)) return;
+
+                        const { name, ext } = parse(args.path);
+                        const hash = Bun.hash.cityHash32(args.path);
+                        outputs[`/assets/${name}-${hash}${ext}`] = Bun.file(args.path);
+                        return {
+                            contents: `/@maki/assets/${name}-${hash}${ext}`,
+                            loader: "text",
+                        };
+                    });
+                },
+            },
             ...config.plugins,
         ],
     });
@@ -226,10 +240,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     }
 
     for (const output of serverBuild.outputs) {
-        if (output.kind === "asset") {
-            const path = relative(cwd, output.path).slice(11);
-            outputs[path] = new Blob([output], { type: mime.getType(path) || output.type });
-        }
+        Bun.write(join(cwd, ".maki/server", output.path.slice(7)), output);
     }
 
     // * Client components * //
@@ -242,17 +253,33 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
         sourcemap: production ? "none" : "inline",
         minify: production,
 
-        // outdir: join(cwd, ".maki"),
         target: "browser",
         splitting: true,
         naming: {
             entry: "./@maki/[dir]/[name].[ext]",
             chunk: "./@maki/chunks/[hash].[ext]",
-            asset: "./@maki/assets/[name]-[hash].[ext]",
         },
 
         publicPath: "./",
-        plugins: config.plugins,
+        plugins: [
+            {
+                name: "Maki Asset Handler",
+                setup(build) {
+                    build.onLoad({ filter: /.+/ }, (args) => {
+                        if (args.namespace !== "file" || !["css", "js", "file"].includes(args.loader)) return;
+
+                        const { name, ext } = parse(args.path);
+                        const hash = Bun.hash.cityHash32(args.path);
+                        outputs[`/assets/${name}-${hash}${ext}`] = Bun.file(args.path);
+                        return {
+                            contents: `/@maki/assets/${name}-${hash}${ext}`,
+                            loader: "text",
+                        };
+                    });
+                },
+            },
+            ...config.plugins,
+        ],
     });
 
     if (!clientBuild.success) {
@@ -292,7 +319,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
             );
 
             Bun.write(join(cwd, `.maki/client/_internal/${basename(path)}`), source);
-            outputs[`/_internal/${basename(path)}`] = new Blob([source]);
+            outputs[`/_internal/${basename(path)}`] = new Blob([source], { type: "text/javascript" });
             continue;
         }
 

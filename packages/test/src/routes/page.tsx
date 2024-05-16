@@ -19,9 +19,7 @@ export default function App() {
 
             <img src={Maki} alt="maki" />
 
-            <head>
-                <link rel="stylesheet" href={Style} />
-            </head>
+            <link rel="stylesheet" href={Style} />
         </>
     );
 }

@@ -16,8 +16,9 @@ export default function Router({ children, initial }: RouterProps) {
     const appRouter = useMemo<AppRouter>(
         () => ({
             push(href) {
-                setPathname(href);
                 window.history.pushState({}, "", href);
+                window.maki.navigate(href);
+                setPathname(href);
             },
             preload(href) {
                 // preloadModule(href, { as: "script" });
@@ -34,8 +35,6 @@ export default function Router({ children, initial }: RouterProps) {
             <head>
                 <meta charSet="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
-                {/* <link rel="stylesheet" href="/styles.css"></link> */}
-                <title>My app</title>
             </head>
 
             <body>
