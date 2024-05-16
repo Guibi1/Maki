@@ -1,23 +1,55 @@
 import { join, resolve } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import PageNotFound from "@/PageNotFound";
-import type { ReactNode } from "react";
+import { createElement } from "@/utils";
+import { type ReactNode, Suspense, lazy, use } from "react";
 // import busboy from "busboy";
 import { decodeReply, decodeReplyFromBusboy, renderToPipeableStream } from "react-server-dom-esm/server.node";
-import type { ServerOptions } from "./server";
+import type { MatchingRoute, ServerOptions } from "./server";
 
 const moduleBaseURL = ".maki/";
 
-export async function renderServerComponents(pathname: string, { cwd }: ServerOptions): Promise<PassThrough> {
-    let mod: ReactNode;
+export async function renderServerComponents(route: MatchingRoute, { cwd }: ServerOptions): Promise<PassThrough> {
+    let currentPage: ReactNode;
     try {
-        mod = (await import(join(cwd, ".maki/src/routes", pathname, "page.js"))).default();
+        currentPage = await importComponent(join(cwd, ".maki/src/routes", route.pathname, "page.js"), route.props);
+
+        for (const depth of route.pageStructure.toReversed()) {
+            if (depth.loading) {
+                currentPage = createElement(Suspense, {
+                    fallback: await importComponent(
+                        join(cwd, ".maki/src/routes", depth.pathname, "loading.js"),
+                        route.props,
+                    ),
+                    children: currentPage,
+                });
+            }
+
+            if (depth.layout) {
+                currentPage = await importComponent(join(cwd, ".maki/src/routes", depth.pathname, "layout.js"), {
+                    ...route.props,
+                    children: currentPage,
+                });
+            }
+
+            if (depth.error) {
+                // currentPage = createElement(ErrorBoundary, {
+                //     FallbackComponent: await importComponent(
+                //         join(cwd, ".maki/src/routes", depth.pathname, "error.js"),
+                //         route.props,
+                //     ),
+                //     children: currentPage,
+                // });
+            }
+        }
+
+        currentPage;
     } catch (e) {
-        console.log("🚀 ~ renderServerComponents ~ mod:", mod, e);
-        mod = PageNotFound();
+        console.log("🚀 ~ renderServerComponents ~ mod:", currentPage, e);
+        currentPage = PageNotFound();
     }
 
-    return renderToPipeableStream(mod, moduleBaseURL).pipe(new PassThrough());
+    return renderToPipeableStream(currentPage, moduleBaseURL).pipe(new PassThrough());
 }
 
 export async function handleServerAction(req: Request) {
@@ -28,7 +60,7 @@ export async function handleServerAction(req: Request) {
     const [filepath, name] = actionReference.split("#");
     const action = (await import(`.${resolve(filepath)}`))[name];
 
-    let args; // Decode the arguments
+    let args: unknown; // Decode the arguments
     if (req?.body && req.headers.get("content-type")?.startsWith("multipart/form-data")) {
         const rs = webToNodeStream(req.body);
         //@ts-ignore
@@ -59,4 +91,16 @@ function webToNodeStream(stream: ReadableStream): Readable {
             }
         },
     });
+}
+
+async function importComponent(path: string, props = {}) {
+    const module = (await import(path)).default;
+
+    if (typeof module === "function") {
+        // The module is a server-component
+        return createElement(({ component }) => use(component), { component: Promise.resolve(module(props)) });
+    }
+
+    // The module is a client-component
+    return createElement(module, props);
 }

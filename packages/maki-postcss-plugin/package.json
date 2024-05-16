@@ -1,20 +1,20 @@
 {
-  "name": "maki-postcss-plugin",
-  "type": "module",
-  "exports": {
-    ".": {
-      "types": "./types.d.ts",
-      "import": "./index.ts"
+    "name": "maki-postcss-plugin",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./index.ts",
+            "import": "./index.ts"
+        },
+        "./package.json": "./package.json"
     },
-    "./package.json": "./package.json"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "postcss": "^8.4.38"
-  },
-  "devDependencies": {
-    "@types/bun": "latest"
-  }
+    "peerDependencies": {
+        "maki": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/bun": "latest"
+    },
+    "dependencies": {
+        "postcss": "^8.4.38"
+    }
 }

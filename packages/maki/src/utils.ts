@@ -1,6 +1,6 @@
 import type { Stream } from "node:stream";
 import type { MakiConfig } from "@/types";
-import type { Attributes, FunctionComponent } from "react";
+import type { Attributes, ElementType } from "react";
 import { jsx } from "react/jsx-runtime";
 import { colors } from "./log";
 
@@ -10,7 +10,7 @@ import { colors } from "./log";
  * @param props The props to pass on render
  * @returns The rendered component
  */
-export function createElement<P extends {}>(component: FunctionComponent<P>, { key, ...props }: P & Attributes) {
+export function createElement<P extends {}>(component: ElementType<P>, { key, ...props }: P & Attributes) {
     return jsx(component, props, key ?? undefined);
 }
 

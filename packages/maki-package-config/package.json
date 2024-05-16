@@ -1,11 +1,12 @@
 {
-  "name": "@maki/config",
-  "type": "module",
-  "exports": {
-    "./*": {
-      "types": "./*",
-      "import": "./*"
-    },
-    "./package.json": "./package.json"
-  }
+    "name": "@maki/config",
+    "type": "module",
+    "private": true,
+    "exports": {
+        "./*": {
+            "types": "./*",
+            "import": "./*"
+        },
+        "./package.json": "./package.json"
+    }
 }

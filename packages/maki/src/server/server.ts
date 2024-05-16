@@ -10,12 +10,12 @@ import { Fragment, type ReactNode, lazy } from "react";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
 import { renderServerComponents } from "./react-server-dom";
 
+// TODO: handle head
 // TODO: handle endpoints
 // TODO: typesafe endpoints
-// TODO: loading
 // TODO: error boundaries
-// TODO: good routing
-// TODO: rsc
+// TODO: server actions
+// TODO: page not found
 
 const makiBaseDir = `${resolve(import.meta.dir, "../..")}/`;
 const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
@@ -41,7 +41,8 @@ export async function createServer(options: ServerOptions) {
             // * SERVER COMPONENTS *
             if (method === "GET" && url.pathname.startsWith("/@maki/jsx/")) {
                 const pathname = url.pathname.slice(10);
-                const stream = await renderServerComponents(pathname, options);
+                const matchingRoute = matchRoute(pathname, url.searchParams, router);
+                const stream = await renderServerComponents(matchingRoute, options);
                 return new Response(pipeToReadableStream(stream), { headers: { "Content-Type": "text/x-component" } });
             }
 
@@ -58,10 +59,6 @@ export async function createServer(options: ServerOptions) {
                 if (pathname === "/ws") {
                     if (server.upgrade(req)) return;
                     return new Response("WebSocket upgrade failed", { status: 400 });
-                }
-
-                if (pathname === "/client") {
-                    return new Response(build.client, { headers: { "Content-Type": "text/javascript" } });
                 }
 
                 const output = build.outputs[pathname];
@@ -93,13 +90,12 @@ export async function createServer(options: ServerOptions) {
 
             // * SERVER SIDE RENDER *
             try {
+                const matchingRoute = matchRoute(url.pathname, url.searchParams, router);
                 const App = createFromNodeStream(
-                    await renderServerComponents(url.pathname, options),
+                    await renderServerComponents(matchingRoute, options),
                     `${options.cwd}/.maki/client/`,
                     "/@maki/",
                 );
-
-                // const page = createReactTree(router, url.pathname);
 
                 const { renderToReadableStream } = await import(join(options.cwd, ".maki/client/ssr.js"));
                 const stream = await renderToReadableStream(App, req.url, {
@@ -109,7 +105,6 @@ export async function createServer(options: ServerOptions) {
                     })};`,
                 });
 
-                await stream.allReady;
                 return new Response(stream, { headers: { "Content-Type": "text/html" } });
             } catch (e) {
                 console.error(e);
@@ -217,12 +212,20 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
             {
                 name: "Maki Asset Handler",
                 setup(build) {
-                    build.onLoad({ filter: /.+/ }, (args) => {
+                    build.onLoad({ filter: /.+/ }, async (args) => {
                         if (args.namespace !== "file" || !["css", "js", "file"].includes(args.loader)) return;
 
                         const { name, ext } = parse(args.path);
+
+                        const asset = await config.plugins
+                            .filter((plugin) => args.path.match(plugin.filter))
+                            .reduce<Promise<Blob>>(
+                                (blob, plugin) => blob.then((blob) => plugin.modify(blob, args.path)),
+                                Promise.resolve(Bun.file(args.path)),
+                            );
+
                         const hash = Bun.hash.cityHash32(args.path);
-                        outputs[`/assets/${name}-${hash}${ext}`] = Bun.file(args.path);
+                        outputs[`/assets/${name}-${hash}${ext}`] = asset;
                         return {
                             contents: `/@maki/assets/${name}-${hash}${ext}`,
                             loader: "text",
@@ -230,17 +233,12 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
                     });
                 },
             },
-            ...config.plugins,
         ],
     });
 
     if (!serverBuild.success) {
         console.error("Server build failed");
         throw new AggregateError(serverBuild.logs, "Server build failed");
-    }
-
-    for (const output of serverBuild.outputs) {
-        Bun.write(join(cwd, ".maki/server", output.path.slice(7)), output);
     }
 
     // * Client components * //
@@ -278,7 +276,6 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
                     });
                 },
             },
-            ...config.plugins,
         ],
     });
 
@@ -301,9 +298,14 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     if (!clientOutput) {
         throw "Build error: Couldnt find the client entry-point.";
     }
-    const clientScript = (await clientOutput.text())
-        .replace(/"(?:\.{1,2}\/)+(?:[a-zA-Z0-9]+\/)+([a-zA-Z0-9]+\.js)"/g, '"/@maki/_internal/$1"')
-        .replace(/"(?:[.a-zA-Z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g, '"/$1"');
+    outputs["/client"] = new Blob(
+        [
+            (await clientOutput.text())
+                .replace(/"(?:\.{1,2}\/)+(?:[a-zA-Z0-9]+\/)+([a-zA-Z0-9]+\.js)"/g, '"/@maki/_internal/$1"')
+                .replace(/"(?:[.a-zA-Z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g, '"/$1"'),
+        ],
+        { type: "text/javascript" },
+    );
 
     for (const output of clientBuild.outputs) {
         if (output === clientOutput || output === ssrOutpout) continue;
@@ -329,10 +331,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
 
     if (logs) log.buildComplete(startTime, "Compilation done");
 
-    return {
-        client: clientScript,
-        outputs,
-    };
+    return { outputs };
 }
 
 function createRouter({ cwd }: ServerOptions) {
@@ -444,6 +443,84 @@ function createReactTree(router: Route, pathname: string) {
     return createElement(Router, { initial: { pathname }, children: routeToReact(router, "") });
 }
 
+export type MatchingRoute = { pathname: string; pageStructure: PageStructure; props: PageProps };
+export type PageStructure = { pathname: string; layout?: boolean; loading?: boolean; error?: boolean }[];
+export type PageProps = { searchParams: Record<string, string | string[]>; params: Record<string, string> };
+function matchRoute(pathname: string, searchParams: URLSearchParams, router: Route): MatchingRoute {
+    const pathFragments = getPathnameFragments(pathname);
+
+    type Slugs = [number, string][];
+    let matchingRoute: { pathname: string; slugs: Slugs } | undefined;
+    const searchPossibleRoutes = (route: Route, depth = 0, slugs: Slugs = []) => {
+        if (pathFragments.length === depth + 1 && route.page) {
+            if (!matchingRoute) {
+                matchingRoute = { pathname: route.pathname, slugs };
+                return;
+            }
+
+            for (let i = 0; i < matchingRoute.slugs.length && i < slugs.length; i++) {
+                if (slugs[i][0] < matchingRoute.slugs[i][0]) return;
+                if (slugs[i][0] > matchingRoute.slugs[i][0]) {
+                    matchingRoute = { pathname: route.pathname, slugs };
+                }
+            }
+
+            if (slugs.length < matchingRoute.slugs.length) {
+                matchingRoute = { pathname: route.pathname, slugs };
+            }
+            return;
+        }
+
+        if (!route.routes) return undefined;
+        for (const [subroutePathFrag, subroute] of Object.entries(route.routes)) {
+            if (routeIsSlug(subroute)) {
+                searchPossibleRoutes(subroute, depth + 1, [...slugs, [depth + 1, subroute.name]]);
+            } else if (subroutePathFrag === pathFragments.at(depth + 1)) {
+                searchPossibleRoutes(subroute, depth + 1, slugs);
+            }
+        }
+    };
+    searchPossibleRoutes(router);
+
+    if (!matchingRoute) throw "404";
+
+    const pageStructure: PageStructure = [];
+    getPathnameFragments(matchingRoute.pathname).reduce(
+        ({ route, ...prev }, pathFragment, i, pathFragments) => {
+            const pathname = i === 1 ? pathFragment : prev.pathname + pathFragment;
+            pageStructure.push({
+                pathname,
+                layout: !!route.layout,
+                loading: !!route.loading,
+                error: !!route.error,
+            });
+            if (i + 1 === pathFragments.length) return { route, pathname };
+            if (!route.routes) throw "This can't happen!";
+            return { route: route.routes[pathFragments[i + 1]], pathname };
+        },
+        {
+            pathname: "",
+            route: router,
+        },
+    );
+
+    return {
+        pathname: matchingRoute.pathname,
+        pageStructure,
+        props: {
+            searchParams: Object.fromEntries(
+                Array.from(searchParams.keys()).map((k) => {
+                    const value = searchParams.getAll(k).map(decodeURIComponent);
+                    return [k, value.length === 1 ? value[0] : value];
+                }),
+            ),
+            params: Object.fromEntries(
+                matchingRoute.slugs.map(([depth, name]) => [name, decodeURIComponent(pathFragments[depth].slice(1))]),
+            ),
+        },
+    };
+}
+
 function routeIsSlug(route: Route): route is SlugRouteFragment {
     return "name" in route;
 }
@@ -456,4 +533,9 @@ function routeIsSlug(route: Route): route is SlugRouteFragment {
 export function removeFileExtension(path: string) {
     const parsed = parse(path);
     return format({ ...parsed, base: parsed.name });
+}
+
+function getPathnameFragments(pathname: string) {
+    if (pathname === "/") return ["/"];
+    return pathname.split("/").map((s) => `/${s}`);
 }

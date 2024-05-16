@@ -1,6 +1,6 @@
 import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
 import { createElement } from "@/utils";
-import { Fragment, type ReactNode, lazy } from "react";
+import { Fragment, type ReactNode, lazy, use } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromFetch } from "react-server-dom-esm/client";
 
@@ -58,11 +58,13 @@ function createReactTree() {
 }
 
 function createTree(pathname: string) {
-    const page = createFromFetch(fetch(`/@maki/jsx${pathname}`), { callServer, moduleBaseURL });
-    console.log("🚀 ~ createTree ~ page:", page);
+    const url = new URL(`/@maki/jsx${pathname}`, location.origin);
+    url.search = location.search;
+
+    const Page = createFromFetch(fetch(url), { callServer, moduleBaseURL });
     return createElement(Router, {
         initial: { pathname },
-        children: page,
+        children: Page,
     });
 }
 

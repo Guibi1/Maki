@@ -1,23 +1,19 @@
-import type { BunPlugin } from "bun";
-import type { MakiPostCssPluginOptions } from "maki-postcss-plugin";
-import postcss from "postcss";
+import type { MakiPlugin } from "maki";
+import postcss, { type AcceptedPlugin } from "postcss";
 
-export default function makiPostCssPlugin(options: MakiPostCssPluginOptions): BunPlugin {
+export type MakiPostCssPluginOptions = { plugins: AcceptedPlugin[] };
+
+export default function makiPostCssPlugin(options: MakiPostCssPluginOptions): MakiPlugin {
     const processor = postcss(options.plugins);
 
     return {
         name: "Maki PostCSS",
-        async setup(build) {
-            build.onLoad({ filter: /\.(post)?css$/ }, async (args) => {
-                console.log("🚀 ~ postcss.onLoad ~ args:", args);
-                const css = await Bun.file(args.path).text();
-                const result = await processor.process(css, { from: args.path });
+        filter: /\.(post)?css$/,
+        async modify(blob, path) {
+            const css = await blob.text();
+            const result = await processor.process(css, { from: path });
 
-                return {
-                    contents: result.css,
-                    loader: "text",
-                };
-            });
+            return new Blob([result.css], { type: "text/css" });
         },
     };
 }

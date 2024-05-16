@@ -1,7 +1,5 @@
 import Counter from "@/components/Counter";
 import Link from "maki/routing";
-// import "./main.css";
-import Style from "./main.css";
 import Maki from "./maki.svg";
 
 export default function App() {
@@ -10,6 +8,7 @@ export default function App() {
             <div className="flex">
                 <Link href="/nested">go deep</Link>
             </div>
+
             {Bun.which("bun")}
 
             <Counter />
@@ -18,8 +17,6 @@ export default function App() {
             {/* <p className="font-bold p-2 ring-1">HMR WORaaKS!</p> */}
 
             <img src={Maki} alt="maki" />
-
-            <link rel="stylesheet" href={Style} />
         </>
     );
 }
