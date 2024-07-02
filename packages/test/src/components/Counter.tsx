@@ -2,7 +2,7 @@
 import { useState } from "react";
 
 export default function Counter() {
-    const [state, set] = useState(2);
+    const [state, set] = useState(0);
 
     return (
         <button
@@ -10,7 +10,7 @@ export default function Counter() {
             type="button"
             onClick={() => set((p) => p + 1)}
         >
-            Count! {state}
+            You clicked {state} times :o
         </button>
     );
 }

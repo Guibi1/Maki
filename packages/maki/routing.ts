@@ -1,4 +1,4 @@
-import Link from "./src/routing/Link";
+import Link from "./src/components/Link";
+import { useRouter } from "./src/components/Router";
 
-export default Link;
-export { useRouter } from "./src/routing/Router"
+export { Link as default, useRouter };

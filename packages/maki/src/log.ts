@@ -1,13 +1,13 @@
-import type { Method } from "@/types";
 import { msDeltaTime } from "@/utils";
 import chalk from "chalk";
+import type { HttpMethod } from "./server/endpoints/types";
 
 function getTime() {
     return chalk.dim(new Date().toLocaleTimeString());
 }
 
 export default {
-    request(method: Method, url: URL) {
+    request(method: HttpMethod, url: URL) {
         console.log(getTime(), chalk.hex("#cba6f7")(method), url.pathname);
     },
     fileChange(fileName: string) {

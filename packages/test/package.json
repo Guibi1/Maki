@@ -1,19 +1,20 @@
 {
-    "name": "test",
-    "module": "index.ts",
-    "type": "module",
-    "scripts": {
-        "dev": "maki dev"
-    },
-    "dependencies": {
-        "maki": "workspace:*",
-        "maki-postcss-plugin": "workspace:*",
-        "autoprefixer": "^10.4.19",
-        "cssnano": "^7.0.1",
-        "tailwindcss": "^3.4.3"
-    },
-    "devDependencies": {
-        "@maki/config": "workspace:*",
-        "@types/bun": "latest"
-    }
+  "name": "test",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "maki dev"
+  },
+  "dependencies": {
+    "maki": "workspace:*",
+    "maki-postcss-plugin": "workspace:*",
+    "arktype": "2.0.0-dev.13",
+    "autoprefixer": "^10.4.19",
+    "cssnano": "^7.0.3",
+    "tailwindcss": "^3.4.4"
+  },
+  "devDependencies": {
+    "@maki/config": "workspace:*",
+    "@types/bun": "latest"
+  }
 }

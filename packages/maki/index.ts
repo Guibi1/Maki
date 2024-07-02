@@ -1,1 +1,1 @@
-export type { MakiConfig, MakiPlugin } from "@/types";
+export type { MakiConfig, MakiPlugin } from "./src/types";

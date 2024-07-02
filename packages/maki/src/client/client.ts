@@ -1,69 +1,23 @@
-import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
+import MakiShell from "@/components/MakiShell";
 import { createElement } from "@/utils";
-import { Fragment, type ReactNode, lazy, use } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromFetch } from "react-server-dom-esm/client";
 
 declare global {
     interface Window {
-        maki: { routes: Route; navigate: (pathname: string) => void };
+        maki: { render: (pathname: string) => void };
     }
 }
-
-type Route = {
-    layout: boolean;
-    page: boolean;
-    routes?: Record<string, Route>;
-};
 
 const moduleBaseURL = "/@maki/";
 
-function createReactTree() {
-    const baseUrl = new URL("/@maki/routes", window.location.origin).toString();
-    console.log("🚀 ~ createReactTree ~ baseUrl:", baseUrl);
-
-    function routeToReact(route: Route, url: string): ReactNode {
-        console.log("🚀 ~ routeToReact ~ url:", url);
-        console.log("🚀 ~ routeToReact ~ route:", route);
-        if (!route.page && !route.routes) return null;
-
-        const subroutes = route.routes
-            ? Object.entries(route.routes).map(([dir, subroute]) => routeToReact(subroute, url + dir))
-            : null;
-        const page = route.page
-            ? createElement(PageRoute, {
-                  url: url,
-                  children: createElement(
-                      lazy(() => import(`${baseUrl}${url}/page.js`)),
-                      { params: {} },
-                  ),
-              })
-            : null;
-
-        if (!route.layout) return createElement(Fragment, { key: url, children: [page, subroutes] });
-        return createElement(LayoutRoute, {
-            url,
-            key: url,
-            children: createElement(
-                lazy(() => import(`${baseUrl}${url}/layout.js`)),
-                { params: {}, children: [page, subroutes] },
-            ),
-        });
-    }
-
-    return createElement(Router, {
-        initial: { pathname: window.location.pathname },
-        children: routeToReact(window.maki.routes, ""),
-    });
-}
-
-function createTree(pathname: string) {
+function fetchReactTree(pathname: string) {
     const url = new URL(`/@maki/jsx${pathname}`, location.origin);
     url.search = location.search;
 
     const Page = createFromFetch(fetch(url), { callServer, moduleBaseURL });
-    return createElement(Router, {
-        initial: { pathname },
+    return createElement(MakiShell, {
+        router: { initial: { pathname } },
         children: Page,
     });
 }
@@ -84,10 +38,10 @@ async function callServer(id: string, args: unknown[]) {
     ).returnValue;
 }
 
-const root = hydrateRoot(document, createTree(location.pathname));
+const root = hydrateRoot(document, fetchReactTree(location.pathname));
 
-window.maki.navigate = (pathname: string) => {
-    root.render(createTree(pathname));
+window.maki.render = (pathname: string) => {
+    root.render(fetchReactTree(pathname));
 };
 
 const ws = new WebSocket(new URL("/@maki/ws", `ws://${window.location.host}`));

@@ -1,26 +1,20 @@
-import { watch } from "node:fs";
+import { readFileSync, watch } from "node:fs";
 import { basename, format, join, parse, relative, resolve } from "node:path";
 import log, { colors } from "@/log";
-import Router, { LayoutRoute, PageRoute } from "@/routing/Router";
-import type { MakiConfig, Method } from "@/types";
-import { createElement, msDeltaTime, pipeToReadableStream } from "@/utils";
+import { msDeltaTime, pipeToReadableStream, searchParamsToObj } from "@/utils";
 import type { Server } from "bun";
 import chalk from "chalk";
-import { Fragment, type ReactNode, lazy } from "react";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
-import { renderServerComponents } from "./react-server-dom";
+import type { MakiConfig } from "../types";
+import { handleServerEndpoint, writeGlobalApiEndpointsTypes } from "./endpoints/server-endpoints";
+import { type HttpMethod, isHttpMethod } from "./endpoints/types";
+import { handleServerAction, renderServerComponents } from "./react-server-dom";
 
 // TODO: handle head
-// TODO: handle endpoints
-// TODO: typesafe endpoints
 // TODO: error boundaries
 // TODO: server actions
-// TODO: page not found
 
 const makiBaseDir = `${resolve(import.meta.dir, "../..")}/`;
-const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
-const routerGlob = new Bun.Glob("**/{page,layout,loading,error,notFound}.{tsx,jsx,ts,js}");
-const endpointGlob = new Bun.Glob("**/{server.{ts,js}");
 export type ServerOptions = {
     config: MakiConfig;
     cwd: string;
@@ -32,25 +26,32 @@ export async function createServer(options: ServerOptions) {
 
     let build = await buildProject(options, false);
     let router = createRouter(options);
+    writeGlobalApiEndpointsTypes(router, options);
 
     const server: Server = Bun.serve({
         async fetch(req) {
             const url = new URL(req.url, server.url);
-            const method = (req.headers.get("METHOD")?.toUpperCase() as Method) ?? "GET";
+            const method = req.method as HttpMethod;
 
             // * SERVER COMPONENTS *
             if (method === "GET" && url.pathname.startsWith("/@maki/jsx/")) {
                 const pathname = url.pathname.slice(10);
-                const matchingRoute = matchRoute(pathname, url.searchParams, router);
-                const stream = await renderServerComponents(matchingRoute, options);
+
+                const matchingRoute = matchRoute(pathname, method, url.searchParams, router);
+                if (matchingRoute.type === "endpoint") {
+                    return new Response("404", { status: 404 });
+                }
+
+                const pageStructure = getRoutePageStructure(matchingRoute, router);
+                const stream = await renderServerComponents(matchingRoute, pageStructure, options);
                 return new Response(pipeToReadableStream(stream), { headers: { "Content-Type": "text/x-component" } });
             }
 
             // * SERVER ACTIONS *
-            if (method === "POST" && url.pathname.startsWith("/@maki/actions/")) {
+            if (method === "POST" && url.pathname === "/@maki/actions") {
                 console.log("REACT SERVER ACTION CALLED", url.pathname);
-                // handleServerAction(req);
-                throw "RSA not implemented :(";
+                const stream = await handleServerAction(req, options);
+                return new Response(pipeToReadableStream(stream), { headers: { "Content-Type": "text/x-component" } });
             }
 
             // * BUILD *
@@ -71,28 +72,31 @@ export async function createServer(options: ServerOptions) {
 
             log.request(method, url);
 
+            // * PUBLIC *
+            const publicFile = Bun.file(`${options.cwd}/public${url.pathname}`);
+            if (method === "GET" && (await publicFile.exists())) {
+                return new Response(publicFile);
+            }
+
+            const matchingRoute = matchRoute(url.pathname, method, url.searchParams, router);
+
             // * SERVER ENDPOINTS *
-            const endpoint = !"(url.pathname, method)";
-            if (endpoint) {
-                const output = "";
-                return new Response(JSON.parse(output), { headers: { "Content-Type": "application/json" } });
+            if (matchingRoute.type === "endpoint") {
+                const module = await import(join(options.cwd, "src/routes", matchingRoute.pathname, "server"));
+                const endpoint = module[method];
+
+                return await handleServerEndpoint(endpoint, matchingRoute, req);
             }
 
             if (method !== "GET") {
-                return new Response("405 - Method not allowed", { status: 405 });
-            }
-
-            // * PUBLIC *
-            const publicFile = Bun.file(`${options.cwd}/public${url.pathname}`);
-            if (await publicFile.exists()) {
-                return new Response(publicFile);
+                return new Response("405 - Method not allowed", { status: 405, headers: { Allow: "GET" } });
             }
 
             // * SERVER SIDE RENDER *
             try {
-                const matchingRoute = matchRoute(url.pathname, url.searchParams, router);
+                const pageStructure = getRoutePageStructure(matchingRoute, router);
                 const App = createFromNodeStream(
-                    await renderServerComponents(matchingRoute, options),
+                    await renderServerComponents(matchingRoute, pageStructure, options),
                     `${options.cwd}/.maki/client/`,
                     "/@maki/",
                 );
@@ -100,9 +104,7 @@ export async function createServer(options: ServerOptions) {
                 const { renderToReadableStream } = await import(join(options.cwd, ".maki/client/ssr.js"));
                 const stream = await renderToReadableStream(App, req.url, {
                     bootstrapModules: ["/@maki/client"],
-                    bootstrapScriptContent: `window.maki = ${JSON.stringify({
-                        routes: routerToClient(router) ?? {},
-                    })};`,
+                    bootstrapScriptContent: `window.maki = ${JSON.stringify({})};`,
                 });
 
                 return new Response(stream, { headers: { "Content-Type": "text/html" } });
@@ -127,13 +129,16 @@ export async function createServer(options: ServerOptions) {
     });
 
     const watcher = watch(`${options.cwd}/src`, { recursive: true });
-    watcher.addListener("change", async (_, file: string) => {
-        log.fileChange(file);
+    watcher.addListener("change", async (_, fileName: string) => {
+        if (fileName === "api.d.ts") return;
+
+        log.fileChange(fileName);
         build = await buildProject(options);
         router = createRouter(options);
+        writeGlobalApiEndpointsTypes(router, options);
 
         console.log();
-        server.publish("hmr", JSON.stringify({ type: "change", pathname: `/${parse(file).dir}` }), true);
+        server.publish("hmr", JSON.stringify({ type: "change", pathname: `/${parse(fileName).dir}` }), true);
     });
 
     console.log();
@@ -147,6 +152,7 @@ export async function createServer(options: ServerOptions) {
 }
 
 type ReactDirective = "server" | "client";
+const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
 async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     const startTime = Bun.nanoseconds();
     const clientComponents = new Set<string>();
@@ -177,8 +183,8 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
                         const isInternalMakiFile = path.startsWith(makiBaseDir);
 
                         const exportPath = isInternalMakiFile
-                            ? relative(makiBaseDir, path).replace("src/routing", ".maki/_internal")
-                            : relative(cwd, path).replace("src", ".maki");
+                            ? relative(makiBaseDir, path).replace("src/components", ".maki/_internal")
+                            : relative(cwd, path).replace("src", ".maki/src");
                         const id = `${removeFileExtension(exportPath)}.js#${exportName}`;
                         const mod = `${exportName === "default" ? parse(path).name : ""}_${exportName}`;
                         if (directive === "server") {
@@ -195,7 +201,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
                     build.onLoad({ filter: /\.[tj]sx?$/ }, async (args) => {
                         const file = await Bun.file(args.path).text();
 
-                        const directive = file.match(/^[\s\n;]*(["`'])use (client|server)\1/);
+                        const directive = file.match(/^[\s\n;]*(["`'])use (client)\1/);
                         if (!directive) return { contents: file }; // If there are no directives, we let it be bundled
 
                         const { exports } = transpiler.scan(file);
@@ -254,12 +260,45 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
         target: "browser",
         splitting: true,
         naming: {
-            entry: "./@maki/[dir]/[name].[ext]",
+            entry: "./@maki/src/[dir]/[name].[ext]",
             chunk: "./@maki/chunks/[hash].[ext]",
         },
 
         publicPath: "./",
         plugins: [
+            {
+                name: "Maki React Register",
+                setup(build) {
+                    function exportToJsx(exportName: string, path: string) {
+                        const isInternalMakiFile = path.startsWith(makiBaseDir);
+
+                        const exportPath = isInternalMakiFile
+                            ? relative(makiBaseDir, path).replace("src/components", ".maki/_internal")
+                            : relative(cwd, path).replace("src", ".maki/src");
+                        const id = `${removeFileExtension(exportPath)}.js#${exportName}`;
+                        const mod = `${exportName === "default" ? parse(path).name : ""}_${exportName}`;
+
+                        // In case the of a server components, we add properties to a mock up function to avoid shipping the code to the client
+                        return `const ${mod}={};${mod}.$$typeof=Symbol.for("react.server.reference");${mod}.$$id="${id}";${mod}.$$bound=null; export {${mod} as ${exportName}};`;
+                    }
+
+                    const transpiler = new Bun.Transpiler({ loader: "tsx" });
+
+                    build.onLoad({ filter: /\.[tj]sx?$/ }, async (args) => {
+                        const file = await Bun.file(args.path).text();
+
+                        const directive = file.match(/^[\s\n;]*(["`'])use server\1/);
+                        if (!directive) return { contents: file }; // If there are no directives, we let it be bundled
+
+                        const { exports } = transpiler.scan(file);
+                        if (exports.length === 0) return { contents: file }; // If there are no exports, we also let it be bundled
+
+                        return {
+                            contents: exports.map((e) => exportToJsx(e, args.path)).join("\n"),
+                        };
+                    });
+                },
+            },
             {
                 name: "Maki Asset Handler",
                 setup(build) {
@@ -311,7 +350,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
         if (output === clientOutput || output === ssrOutpout) continue;
         const path = output.path.slice(7);
 
-        const compiledFilePath = resolve(`${cwd}/src`, `.${path}`);
+        const compiledFilePath = resolve(`${cwd}`, `.${path}`);
         if (compiledFilePath.startsWith(makiBaseDir)) {
             // Is internal maki source file
 
@@ -325,8 +364,13 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
             continue;
         }
 
-        outputs[path] = output;
-        Bun.write(join(cwd, ".maki/client", path), output);
+        const source = (await output.text()).replace(
+            /"(?:\.{1,2}\/)+maki\/src\/[a-zA-Z0-9]+\/([a-zA-Z0-9]+\.js)"/g,
+            '"./../_internal/$1"',
+        );
+
+        Bun.write(join(cwd, ".maki/client", path), source);
+        outputs[path] = new Blob([source], { type: "text/javascript" });
     }
 
     if (logs) log.buildComplete(startTime, "Compilation done");
@@ -334,6 +378,8 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     return { outputs };
 }
 
+const transpiler = new Bun.Transpiler();
+const routerGlob = new Bun.Glob("**/{page,layout,loading,error,notFound,server}.{tsx,jsx,ts,js}");
 function createRouter({ cwd }: ServerOptions) {
     const files = Array.from(routerGlob.scanSync({ cwd: `${cwd}/src/routes` })).map(parse);
     const router: RouteFragment = { pathname: "/" };
@@ -366,112 +412,80 @@ function createRouter({ cwd }: ServerOptions) {
             path.name === "error" ||
             path.name === "notFound"
         ) {
-            const sourcefilePath = format({ ...path, base: path.name });
-            parentRoute[path.name] = lazy(() => import(`${cwd}/src/routes/${sourcefilePath}`));
+            parentRoute[path.name] = true;
+        } else if (path.name === "server") {
+            const { exports } = transpiler.scan(readFileSync(join(cwd, "src/routes", path.dir, path.base)));
+            parentRoute.endpoints = new Set<HttpMethod>(exports.filter(isHttpMethod));
         }
+    }
+
+    if (!router.notFound) {
+        console.warn("Not having a root `notFound.tsx` will lead to a RUNTIME crash.");
     }
 
     return router;
 }
 
-type ServerEndpoint = () => unknown;
-type ReactPage = (props: { params: UrlParams }) => ReactNode;
-type ReactLayout = (props: { children: ReactNode; params: UrlParams }) => ReactNode;
-type ReactLoading = (props: { children: ReactNode; params: UrlParams }) => ReactNode;
-type ReactError = (props: { children: ReactNode; params: UrlParams }) => ReactNode;
-type ReactNotFound = (props: { children: ReactNode; params: UrlParams }) => ReactNode;
-type RouteFragment = {
+export type RouteFragment = {
     pathname: string;
-    page?: ReactPage;
-    layout?: ReactLayout;
-    loading?: ReactLoading;
-    error?: ReactError;
-    notFound?: ReactNotFound;
+    page?: true;
+    layout?: true;
+    loading?: true;
+    error?: true;
+    notFound?: true;
     routes?: Record<string, Route>;
-    endpoints?: Record<Method, ServerEndpoint>;
+    endpoints?: Set<HttpMethod>;
 };
 type SlugRouteFragment = RouteFragment & { name: string };
-
-type UrlParams = Record<string, string>;
 type Route = RouteFragment | SlugRouteFragment;
 
-type ClientRoutes = {
-    layout: boolean;
-    page: boolean;
-    routes?: Record<string, ClientRoutes>;
-};
-function routerToClient(route: Route): ClientRoutes | null {
-    if (!route.page && !route.routes) return null;
-
-    const r: ClientRoutes = {
-        page: !!route.page,
-        layout: !!route.layout,
-    };
-
-    if (route.routes) {
-        for (const [url, subroute] of Object.entries(route.routes)) {
-            const clientSubroute = routerToClient(subroute);
-            if (!clientSubroute) continue;
-            if (!r.routes) r.routes = {};
-            r.routes[url] = clientSubroute;
-        }
-    }
-
-    return r;
-}
-
-function createReactTree(router: Route, pathname: string) {
-    function routeToReact(route: Route, url: string): ReactNode {
-        if (!route.page && !route.routes) return null;
-
-        const subroutes = route.routes
-            ? Object.entries(route.routes).map(([dir, subroute]) => routeToReact(subroute, url + dir))
-            : null;
-        const page = route.page
-            ? createElement(PageRoute, { url, children: createElement(route.page, { params: {} }) })
-            : null;
-
-        const children = subroutes ? subroutes.concat(page) : page;
-        if (!route.layout) return createElement(Fragment, { key: url, children });
-        return createElement(LayoutRoute, {
-            url,
-            key: url,
-            children: createElement(route.layout, { params: {}, children }),
-        });
-    }
-
-    return createElement(Router, { initial: { pathname }, children: routeToReact(router, "") });
-}
-
-export type MatchingRoute = { pathname: string; pageStructure: PageStructure; props: PageProps };
-export type PageStructure = { pathname: string; layout?: boolean; loading?: boolean; error?: boolean }[];
+export type MatchingRoute = { pathname: string; props: PageProps; type: "page" | "endpoint" | "notFound" };
 export type PageProps = { searchParams: Record<string, string | string[]>; params: Record<string, string> };
-function matchRoute(pathname: string, searchParams: URLSearchParams, router: Route): MatchingRoute {
-    const pathFragments = getPathnameFragments(pathname);
+function matchRoute(pathname: string, method: HttpMethod, searchParams: URLSearchParams, router: Route): MatchingRoute {
+    const pathFragments = getPathnameFragments(pathname.endsWith("/") ? pathname.slice(0, -1) || "/" : pathname);
 
-    type Slugs = [number, string][];
-    let matchingRoute: { pathname: string; slugs: Slugs } | undefined;
-    const searchPossibleRoutes = (route: Route, depth = 0, slugs: Slugs = []) => {
-        if (pathFragments.length === depth + 1 && route.page) {
+    type Match = { pathname: string; slugs: [number, string][]; type: "page" | "endpoint" | "notFound" };
+    let matchingRoute: Match | undefined;
+    let matchingPageNotFound: Match & { depth: number } = { pathname: "/", slugs: [], type: "notFound", depth: 0 };
+
+    const searchPossibleRoutes = (route: Route, depth = 0, slugs: Match["slugs"] = []) => {
+        if (pathFragments.length === depth + 1 && ((method === "GET" && route.page) || route.endpoints?.has(method))) {
+            const type = method === "GET" && route.page ? "page" : "endpoint";
+
             if (!matchingRoute) {
-                matchingRoute = { pathname: route.pathname, slugs };
+                matchingRoute = { pathname: route.pathname, slugs, type };
                 return;
             }
 
             for (let i = 0; i < matchingRoute.slugs.length && i < slugs.length; i++) {
                 if (slugs[i][0] < matchingRoute.slugs[i][0]) return;
                 if (slugs[i][0] > matchingRoute.slugs[i][0]) {
-                    matchingRoute = { pathname: route.pathname, slugs };
+                    matchingRoute = { pathname: route.pathname, slugs, type };
                 }
             }
 
             if (slugs.length < matchingRoute.slugs.length) {
-                matchingRoute = { pathname: route.pathname, slugs };
+                matchingRoute = { pathname: route.pathname, slugs, type };
             }
             return;
         }
 
-        if (!route.routes) return undefined;
+        if (route.notFound && route.pathname !== matchingPageNotFound.pathname) {
+            for (let i = 0; i < matchingPageNotFound.slugs.length && i < slugs.length; i++) {
+                if (slugs[i][0] < matchingPageNotFound.slugs[i][0]) return;
+                if (slugs[i][0] > matchingPageNotFound.slugs[i][0]) {
+                    matchingPageNotFound = { pathname: route.pathname, slugs, depth, type: "notFound" };
+                }
+            }
+
+            if (depth > matchingPageNotFound.depth) {
+                matchingPageNotFound = { pathname: route.pathname, slugs, depth, type: "notFound" };
+            } else if (slugs.length < matchingPageNotFound.slugs.length) {
+                matchingPageNotFound = { pathname: route.pathname, slugs, depth, type: "notFound" };
+            }
+        }
+
+        if (!route.routes) return;
         for (const [subroutePathFrag, subroute] of Object.entries(route.routes)) {
             if (routeIsSlug(subroute)) {
                 searchPossibleRoutes(subroute, depth + 1, [...slugs, [depth + 1, subroute.name]]);
@@ -482,10 +496,27 @@ function matchRoute(pathname: string, searchParams: URLSearchParams, router: Rou
     };
     searchPossibleRoutes(router);
 
-    if (!matchingRoute) throw "404";
+    if (!matchingRoute) {
+        matchingRoute = matchingPageNotFound;
+    }
 
+    return {
+        pathname: matchingRoute.pathname,
+        type: matchingRoute.type,
+        props: {
+            searchParams: searchParamsToObj(searchParams),
+            params: Object.fromEntries(
+                matchingRoute.slugs.map(([depth, name]) => [name, decodeURIComponent(pathFragments[depth].slice(1))]),
+            ),
+        },
+    };
+}
+
+export type PageStructure = { pathname: string; layout: boolean; loading: boolean; error: boolean }[];
+function getRoutePageStructure({ pathname }: MatchingRoute, router: Route): PageStructure {
     const pageStructure: PageStructure = [];
-    getPathnameFragments(matchingRoute.pathname).reduce(
+
+    getPathnameFragments(pathname).reduce(
         ({ route, ...prev }, pathFragment, i, pathFragments) => {
             const pathname = i === 1 ? pathFragment : prev.pathname + pathFragment;
             pageStructure.push({
@@ -504,21 +535,7 @@ function matchRoute(pathname: string, searchParams: URLSearchParams, router: Rou
         },
     );
 
-    return {
-        pathname: matchingRoute.pathname,
-        pageStructure,
-        props: {
-            searchParams: Object.fromEntries(
-                Array.from(searchParams.keys()).map((k) => {
-                    const value = searchParams.getAll(k).map(decodeURIComponent);
-                    return [k, value.length === 1 ? value[0] : value];
-                }),
-            ),
-            params: Object.fromEntries(
-                matchingRoute.slugs.map(([depth, name]) => [name, decodeURIComponent(pathFragments[depth].slice(1))]),
-            ),
-        },
-    };
+    return pageStructure;
 }
 
 function routeIsSlug(route: Route): route is SlugRouteFragment {

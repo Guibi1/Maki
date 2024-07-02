@@ -1,6 +1,5 @@
 import Link from "maki/routing";
 // import { useState } from "react";
-import randomImage from "../../image.png";
 
 export default async function Nested() {
     await Bun.sleep(4000);
@@ -13,8 +12,6 @@ export default async function Nested() {
             <p>DEEP!!!!</p>
 
             {/* <p onMouseEnter={() => set((s) => s + 1)}>Hover: {state}</p> */}
-
-            <img src={randomImage} />
         </div>
     );
 }

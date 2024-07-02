@@ -1,8 +1,8 @@
 import type { Stream } from "node:stream";
-import type { MakiConfig } from "@/types";
+import { colors } from "@/log";
 import type { Attributes, ElementType } from "react";
 import { jsx } from "react/jsx-runtime";
-import { colors } from "./log";
+import type { MakiConfig } from "./types";
 
 /**
  * Creates the JSX structure to render a React Component.
@@ -58,4 +58,18 @@ export async function loadMakiConfig(folder: string): Promise<MakiConfig> {
  */
 export function msDeltaTime(startTime: number, endTime?: number) {
     return Math.round(((endTime ?? Bun.nanoseconds()) - startTime) / 1_000_000);
+}
+
+/**
+ * Parses and decodes an entire `URLSearchParam` to an object.
+ * @param searchParams The `URLSearchParam` to parse
+ * @returns An object containing the same values
+ */
+export function searchParamsToObj(searchParams: URLSearchParams) {
+    return Object.fromEntries(
+        Array.from(searchParams.keys()).map((k) => {
+            const value = searchParams.getAll(k).map(decodeURIComponent);
+            return [decodeURIComponent(k), value.length === 1 ? value[0] : value];
+        }),
+    );
 }

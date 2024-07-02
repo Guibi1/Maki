@@ -1,35 +1,40 @@
 {
-    "name": "maki",
-    "type": "module",
-    "bin": {
-        "maki": "./src/bin/maki.ts"
+  "name": "maki",
+  "type": "module",
+  "bin": {
+    "maki": "./src/bin/maki.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
     },
-    "exports": {
-        ".": {
-            "types": "./index.ts",
-            "default": "./index.ts"
-        },
-        "./routing": {
-            "types": "./routing.ts",
-            "default": "./routing.ts"
-        },
-        "./package.json": "./package.json"
+    "./routing": {
+      "types": "./routing.ts",
+      "default": "./routing.ts"
     },
-    "devDependencies": {
-        "@maki/config": "workspace:*",
-        "@types/bun": "latest",
-        "@types/react": "18.3.0",
-        "@types/react-dom": "18.3.0"
+    "./server": {
+      "types": "./server.ts",
+      "default": "./server.ts"
     },
-    "peerDependencies": {
-        "react": "next",
-        "react-dom": "next",
-        "typescript": "^5.0.0"
-    },
-    "dependencies": {
-        "chalk": "^5.3.0",
-        "commander": "^12.0.0",
-        "react-error-boundary": "^4.0.13",
-        "react-server-dom-esm": "workspace:*"
-    }
+    "./package.json": "./package.json"
+  },
+  "devDependencies": {
+    "@maki/config": "workspace:*",
+    "@types/bun": "latest",
+    "@types/react": "18.3.0",
+    "@types/react-dom": "18.3.0"
+  },
+  "peerDependencies": {
+    "arktype": "2.0.0-dev.13",
+    "react": "next",
+    "react-dom": "next",
+    "server-only": "0.0.1"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "react-error-boundary": "^4.0.13",
+    "react-server-dom-esm": "workspace:*"
+  }
 }

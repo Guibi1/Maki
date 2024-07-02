@@ -1,11 +1,11 @@
-import Router from "@/routing/Router";
+import MakiShell from "@/components/MakiShell";
 import { createElement } from "@/utils";
 import type { ReactNode } from "react";
 import { type RenderToReadableStreamOptions, renderToReadableStream as reactRender } from "react-dom/server";
 
 export async function renderToReadableStream(Page: ReactNode, url: URL, options: RenderToReadableStreamOptions) {
-    const page = createElement(Router, {
-        initial: { pathname: url.pathname },
+    const page = createElement(MakiShell, {
+        router: { initial: { pathname: url.pathname } },
         children: Page,
     });
 

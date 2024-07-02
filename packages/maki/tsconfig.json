@@ -3,7 +3,10 @@
 
     "compilerOptions": {
         "paths": {
-            "@/*": ["./src/*"]
+            "@/components/*": ["./src/components/*"],
+            "@/utils": ["./src/utils"],
+            "@/log": ["./src/log"],
+            "@/rscImportConditionPlugin": ["./src/rscImportConditionPlugin"]
         }
     }
 }
