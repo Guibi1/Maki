@@ -1,13 +1,9 @@
-import autoprefixer from "autoprefixer";
-import { plugin } from "bun";
-import cssnano from "cssnano";
+import tailwind from "@tailwindcss/postcss";
 import type { MakiConfig } from "maki";
-import makiTailwindPlugin from "maki-postcss-plugin";
-import tailwind from "tailwindcss";
-import tailwindNesting from "tailwindcss/nesting";
+import makiPostCssPlugin from "maki-postcss-plugin";
 
 const config: MakiConfig = {
-    plugins: [makiTailwindPlugin({ plugins: [autoprefixer(), tailwindNesting(), tailwind(), cssnano()] })],
+    plugins: [makiPostCssPlugin({ plugins: [tailwind()] })],
 };
 
 export default config;

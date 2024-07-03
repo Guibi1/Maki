@@ -3,15 +3,16 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "dev": "maki dev"
+    "dev": "maki dev",
+    "build": "maki build",
+    "preview": "maki preview"
   },
   "dependencies": {
+    "@tailwindcss/postcss": "next",
+    "arktype": "2.0.0-dev.13",
     "maki": "workspace:*",
     "maki-postcss-plugin": "workspace:*",
-    "arktype": "2.0.0-dev.13",
-    "autoprefixer": "^10.4.19",
-    "cssnano": "^7.0.3",
-    "tailwindcss": "^3.4.4"
+    "tailwindcss": "next"
   },
   "devDependencies": {
     "@maki/config": "workspace:*",

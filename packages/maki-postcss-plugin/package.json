@@ -3,7 +3,7 @@
     "type": "module",
     "exports": {
         ".": {
-            "types": "./index.ts",
+            "types": "./types.d.ts",
             "import": "./index.ts"
         },
         "./package.json": "./package.json"

@@ -1,6 +1,6 @@
 import Counter from "@/components/Counter";
 import Link from "maki/routing";
-import Maki from "./maki.svg";
+import Maki from "../maki.svg";
 
 export default function App() {
     return (
