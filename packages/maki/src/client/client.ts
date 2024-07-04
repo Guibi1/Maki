@@ -3,12 +3,6 @@ import { createElement } from "@/utils";
 import { hydrateRoot } from "react-dom/client";
 import { createFromFetch } from "react-server-dom-esm/client";
 
-declare global {
-    interface Window {
-        maki: { render: (pathname: string) => void };
-    }
-}
-
 const moduleBaseURL = "/@maki/";
 
 function fetchReactTree(pathname: string) {
@@ -57,3 +51,11 @@ ws.addEventListener("message", async ({ data }) => {
 });
 
 console.log("HMR client loaded", window.maki);
+
+declare global {
+    interface Window {
+        maki: {
+            render: (pathname: string) => void;
+        };
+    }
+}

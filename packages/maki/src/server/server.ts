@@ -1,9 +1,10 @@
 import { readFileSync, watch } from "node:fs";
 import { basename, format, join, parse, relative, resolve } from "node:path";
 import log, { colors } from "@/log";
-import { msDeltaTime, pipeToReadableStream, searchParamsToObj } from "@/utils";
+import { createElement, msDeltaTime, pipeToReadableStream, searchParamsToObj } from "@/utils";
 import type { Server } from "bun";
 import chalk from "chalk";
+import { renderToReadableStream } from "react-dom/server";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
 import type { MakiConfig } from "../types";
 import { handleServerEndpoint, writeGlobalApiEndpointsTypes } from "./endpoints/server-endpoints";
@@ -32,6 +33,7 @@ export async function createServer(options: ServerOptions) {
         async fetch(req) {
             const url = new URL(req.url, server.url);
             const method = req.method as HttpMethod;
+            if (url.pathname === "/favicon.ico") return new Response();
 
             // * SERVER COMPONENTS *
             if (method === "GET" && url.pathname.startsWith("/@maki/jsx/")) {
@@ -43,7 +45,7 @@ export async function createServer(options: ServerOptions) {
                 }
 
                 const pageStructure = getRoutePageStructure(matchingRoute, router);
-                const stream = await renderServerComponents(matchingRoute, pageStructure, options);
+                const stream = await renderServerComponents(matchingRoute, pageStructure, build.stylesheets, options);
                 return new Response(pipeToReadableStream(stream), { headers: { "Content-Type": "text/x-component" } });
             }
 
@@ -96,13 +98,18 @@ export async function createServer(options: ServerOptions) {
             try {
                 const pageStructure = getRoutePageStructure(matchingRoute, router);
                 const App = createFromNodeStream(
-                    await renderServerComponents(matchingRoute, pageStructure, options),
+                    await renderServerComponents(matchingRoute, pageStructure, build.stylesheets, options),
                     `${options.cwd}/.maki/client/`,
                     "/@maki/",
                 );
 
-                const { renderToReadableStream } = await import(join(options.cwd, ".maki/client/ssr.js"));
-                const stream = await renderToReadableStream(App, req.url, {
+                const { default: MakiShell } = await import(join(options.cwd, ".maki/client/_internal/MakiShell.js"));
+                const page = createElement(MakiShell, {
+                    router: { initial: { pathname: url.pathname } },
+                    children: App,
+                });
+
+                const stream = await renderToReadableStream(page, {
                     bootstrapModules: ["/@maki/client"],
                     bootstrapScriptContent: `window.maki = ${JSON.stringify({})};`,
                 });
@@ -157,15 +164,17 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     const startTime = Bun.nanoseconds();
     const clientComponents = new Set<string>();
     const outputs: Record<string, Blob> = {};
+    const stylesheets: string[] = [];
 
-    const production = true; // Disabling production disables minifying which triggers a bundling error
+    const production = false;
 
     // * Server components * //
     const serverBuild = await Bun.build({
         entrypoints: Array.from(sourceFileGlob.scanSync({ cwd: `${cwd}/src` })).map((s) => `${cwd}/src/${s}`),
         root: `${cwd}/src`,
         sourcemap: production ? "none" : "inline",
-        minify: production,
+        minify: true, // Disabling minifying triggers a bundling error
+        external: production ? undefined : ["react", "react-dom"],
 
         outdir: join(cwd, ".maki"),
         target: "browser",
@@ -230,10 +239,13 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
                                 Promise.resolve(Bun.file(args.path)),
                             );
 
-                        const hash = Bun.hash.cityHash32(args.path);
+                        const hash = Bun.hash.cityHash32(await asset.arrayBuffer());
+                        const url = `/@maki/assets/${name}-${hash}${ext}`;
                         outputs[`/assets/${name}-${hash}${ext}`] = asset;
+
+                        if (ext === ".css") stylesheets.push(url);
                         return {
-                            contents: `/@maki/assets/${name}-${hash}${ext}`,
+                            contents: url,
                             loader: "text",
                         };
                     });
@@ -250,12 +262,13 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     // * Client components * //
     const clientBuild = await Bun.build({
         entrypoints: Array.from(clientComponents).concat(
+            join(makiBaseDir, "src/components/MakiShell.tsx"),
             join(makiBaseDir, "src/client/client.ts"),
-            join(makiBaseDir, "src/server/react-dom.ts"),
         ),
         root: `${cwd}/src`,
         sourcemap: production ? "none" : "inline",
-        minify: production,
+        minify: true, // Disabling minifying triggers a bundling error
+        external: production ? undefined : ["react", "react-dom"],
 
         target: "browser",
         splitting: true,
@@ -323,16 +336,6 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
         throw new AggregateError(clientBuild.logs, "Client build failed");
     }
 
-    const ssrOutpout = clientBuild.outputs.find((o) => o.path.endsWith("/maki/src/server/react-dom.js"));
-    if (!ssrOutpout) {
-        throw "Build error: Couldnt find the compiled react-dom entry-point.";
-    }
-    const ssrScript = (await ssrOutpout.text())
-        .replace(/"(?:\.{1,2}\/)+(?:[a-zA-Z0-9]+\/)+([a-zA-Z0-9]+\.js)"/g, '"./_internal/$1"')
-        .replace(/"(?:[.a-zA-Z0-9]+\/)+?@maki\/(chunks\/[a-zA-Z0-9]+\.js)"/g, '"./$1"');
-
-    Bun.write(join(cwd, ".maki/client/ssr.js"), ssrScript);
-
     const clientOutput = clientBuild.outputs.find((o) => o.path.endsWith("/maki/src/client/client.js"));
     if (!clientOutput) {
         throw "Build error: Couldnt find the client entry-point.";
@@ -347,7 +350,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
     );
 
     for (const output of clientBuild.outputs) {
-        if (output === clientOutput || output === ssrOutpout) continue;
+        if (output === clientOutput) continue;
         const path = output.path.slice(7);
 
         const compiledFilePath = resolve(`${cwd}`, `.${path}`);
@@ -375,7 +378,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
 
     if (logs) log.buildComplete(startTime, "Compilation done");
 
-    return { outputs };
+    return { outputs, stylesheets };
 }
 
 const transpiler = new Bun.Transpiler();

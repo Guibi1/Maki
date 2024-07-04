@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export type MakiConfig = {
     plugins: MakiPlugin[];
 };
@@ -19,6 +21,11 @@ export type MakiPlugin = {
      */
     modify: (file: Blob, path: string) => Promise<Blob> | Blob;
 };
+
+/**
+ * The props that Maki will pass to the root layout of the app.
+ */
+export type RootLayoutProps = { children: ReactNode; head: ReactNode };
 
 /**
  * A utility type that takes an object type and makes the hover overlay more readable.

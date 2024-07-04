@@ -1,1 +1,1 @@
-export type { MakiConfig, MakiPlugin } from "./src/types";
+export type { MakiConfig, MakiPlugin, RootLayoutProps } from "./src/types";

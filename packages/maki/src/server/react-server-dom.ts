@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { createElement } from "@/utils";
-import { type ReactNode, Suspense, use } from "react";
+import { Fragment, type ReactNode, Suspense, use } from "react";
 // import busboy from "busboy";
 import { decodeReply, decodeReplyFromBusboy, renderToPipeableStream } from "react-server-dom-esm/server.node";
 import type { MatchingRoute, PageStructure, ServerOptions } from "./server";
@@ -11,6 +11,7 @@ const moduleBasePath = ".maki/";
 export async function renderServerComponents(
     route: MatchingRoute,
     pageStructure: PageStructure,
+    stylesheets: string[],
     { cwd }: ServerOptions,
 ): Promise<PassThrough> {
     let currentPage: ReactNode = await importComponent(
@@ -27,10 +28,22 @@ export async function renderServerComponents(
         }
 
         if (r.layout) {
-            currentPage = await importComponent(join(cwd, ".maki/src/routes", r.pathname, "layout.js"), {
+            const props = {
                 ...route.props,
                 children: currentPage,
-            });
+            };
+
+            if (r.pathname === "/") {
+                Object.assign(props, {
+                    head: createElement(Fragment, {
+                        children: stylesheets.map((href) =>
+                            createElement("link", { rel: "stylesheet", href, key: href }),
+                        ),
+                    }),
+                });
+            }
+
+            currentPage = await importComponent(join(cwd, ".maki/src/routes", r.pathname, "layout.js"), props);
         }
 
         if (r.error) {
