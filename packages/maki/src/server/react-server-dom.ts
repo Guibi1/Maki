@@ -1,12 +1,16 @@
-import { join, resolve } from "node:path";
+import { format, join, parse, relative, resolve } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { createElement } from "@/utils";
+import type { BunPlugin } from "bun";
 import { Fragment, type ReactNode, Suspense, use } from "react";
 // import busboy from "busboy";
 import { decodeReply, decodeReplyFromBusboy, renderToPipeableStream } from "react-server-dom-esm/server.node";
 import type { MatchingRoute, PageStructure, ServerOptions } from "./server";
 
-const moduleBasePath = ".maki/";
+const makiBaseDir = `${resolve(import.meta.dir, "..")}/`;
+let parseImport = false;
+
+const moduleBasePath = "@maki-fs/";
 
 export async function renderServerComponents(
     route: MatchingRoute,
@@ -14,15 +18,16 @@ export async function renderServerComponents(
     stylesheets: string[],
     { cwd }: ServerOptions,
 ): Promise<PassThrough> {
+    parseImport = true;
     let currentPage: ReactNode = await importComponent(
-        join(cwd, ".maki/src/routes", route.pathname, route.type),
+        join(cwd, "src/routes", route.pathname, route.type),
         route.props,
     );
 
     for (const r of pageStructure.toReversed()) {
         if (r.loading) {
             currentPage = createElement(Suspense, {
-                fallback: await importComponent(join(cwd, ".maki/src/routes", r.pathname, "loading.js"), route.props),
+                fallback: await importComponent(join(cwd, "src/routes", r.pathname, "loading"), route.props),
                 children: currentPage,
             });
         }
@@ -43,7 +48,7 @@ export async function renderServerComponents(
                 });
             }
 
-            currentPage = await importComponent(join(cwd, ".maki/src/routes", r.pathname, "layout.js"), props);
+            currentPage = await importComponent(join(cwd, "src/routes", r.pathname, "layout"), props);
         }
 
         if (r.error) {
@@ -57,7 +62,11 @@ export async function renderServerComponents(
         }
     }
 
-    return renderToPipeableStream(currentPage, moduleBasePath).pipe(new PassThrough());
+    const s = renderToPipeableStream(currentPage, moduleBasePath).pipe(new PassThrough());
+
+    nukeImports();
+    parseImport = false;
+    return s;
 }
 
 export async function handleServerAction(req: Request, { cwd }: ServerOptions) {
@@ -114,9 +123,74 @@ async function importComponent(path: string, props = {}, importName = "default")
 
     if (typeof module === "function") {
         // The module is a server-component
-        return createElement(({ component }) => use(component), { component: Promise.resolve(module(props)) });
+        const component = module(props);
+        if (component instanceof Promise) {
+            return createElement(({ component }) => use(component), { component });
+        }
+        return component;
     }
 
     // The module is a client-component
     return createElement(module, props);
+}
+
+const imports: string[] = [];
+const rscImportTransformerPlugin: BunPlugin = {
+    name: "Maki RSC client import",
+    async setup(build) {
+        function exportToJsx(exportName: string, path: string, directive: ReactDirective) {
+            const isInternalMakiFile = path.startsWith(makiBaseDir);
+
+            const exportPath = isInternalMakiFile
+                ? relative(makiBaseDir, path).replace("src/components", "_internal")
+                : relative(process.cwd(), path);
+            const id = `@maki-fs/${path}#${exportName}`;
+            const mod = `${exportName === "default" ? parse(path).name : ""}_${exportName}`;
+
+            if (directive === "server") {
+                // In case the of a server components, we add properties to a mock up function to avoid shipping the code to the client
+                return `const ${mod}=()=>{throw new Error("This function is expected to only run on the server")};${mod}.$$typeof=Symbol.for("react.server.reference");${mod}.$$id="${id}";${mod}.$$bound=null; export {${mod} as ${exportName}};`;
+            }
+
+            return `const ${mod}={$$typeof:Symbol.for("react.client.reference"),$$id:"${id}",$$async:true}; export {${mod} as ${exportName}};`;
+        }
+
+        const transpiler = new Bun.Transpiler({ loader: "tsx" });
+
+        build.onLoad({ filter: /\.[tj]sx$/ }, async (args) => {
+            const file = await Bun.file(args.path).text();
+            if (!parseImport) return { contents: file };
+
+            const directive = file.match(/^[\s\n;]*(["`'])use (client)\1/);
+            if (!directive) return { contents: file }; // If there are no directives, we let it be bundled
+
+            const { exports } = transpiler.scan(file);
+            if (exports.length === 0) return { contents: file }; // If there are no exports, we also let it be bundled
+
+            imports.push(args.path);
+            return {
+                contents: exports.map((e) => exportToJsx(e, args.path, directive[2] as ReactDirective)).join("\n"),
+            };
+        });
+    },
+};
+
+type ReactDirective = "server" | "client";
+/**
+ * Removes the file extension of a path, if it has one.
+ * @param path The path to parse
+ * @returns The path without the file extension
+ */
+export function removeFileExtension(path: string) {
+    const parsed = parse(path);
+    return format({ ...parsed, base: parsed.name });
+}
+
+Bun.plugin(rscImportTransformerPlugin);
+
+function nukeImports() {
+    for (const path of Object.keys(require.cache)) {
+        if (!imports.includes(path)) continue;
+        delete require.cache[path];
+    }
 }

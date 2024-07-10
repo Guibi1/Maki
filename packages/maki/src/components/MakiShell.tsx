@@ -1,5 +1,5 @@
+import Router from "@/components/Router";
 import { type ReactNode, StrictMode } from "react";
-import Router from "./Router";
 
 export type MakiShellProps = { children: ReactNode; router: { initial: { pathname: string } } };
 

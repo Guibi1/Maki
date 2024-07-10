@@ -31,7 +31,13 @@ export default {
  * Some standard terminal styling and colors.
  */
 export const colors = {
-    link(link: string) {
-        return chalk.hex("#89b4fa").underline(link);
+    link(text: string) {
+        return chalk.hex("#89b4fa").underline(text);
+    },
+    dim(text: string) {
+        return chalk.dim(text);
+    },
+    bgGreen(text: string) {
+        return chalk.hex("#1e1e2e").bgHex("#a6e3a1")(text);
     },
 };

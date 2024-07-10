@@ -1,8 +1,9 @@
 import { readFileSync, watch } from "node:fs";
-import { basename, format, join, parse, relative, resolve } from "node:path";
+import { basename, dirname, extname, format, isAbsolute, join, parse, relative, resolve } from "node:path";
+import MakiShell from "@/components/MakiShell";
 import log, { colors } from "@/log";
 import { createElement, msDeltaTime, pipeToReadableStream, searchParamsToObj } from "@/utils";
-import type { Server } from "bun";
+import type { JavaScriptLoader, Server } from "bun";
 import chalk from "chalk";
 import { renderToReadableStream } from "react-dom/server";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
@@ -33,7 +34,14 @@ export async function createServer(options: ServerOptions) {
         async fetch(req) {
             const url = new URL(req.url, server.url);
             const method = req.method as HttpMethod;
-            if (url.pathname === "/favicon.ico") return new Response();
+
+            // /(import\s*(?:{?\s*(?:[\w\s, $]|\*)+\s*}?(?: as .*)?\s*from\s*)?|(?:require|import)\()"(.+?)"(.*?);/g,
+
+            // * CLIENT WEBSOCKET *
+            if (method === "GET" && url.pathname.startsWith("/@maki/ws")) {
+                if (server.upgrade(req)) return;
+                return new Response("WebSocket upgrade failed", { status: 400 });
+            }
 
             // * SERVER COMPONENTS *
             if (method === "GET" && url.pathname.startsWith("/@maki/jsx/")) {
@@ -56,13 +64,81 @@ export async function createServer(options: ServerOptions) {
                 return new Response(pipeToReadableStream(stream), { headers: { "Content-Type": "text/x-component" } });
             }
 
+            // * FILE SYSTEM *
+            if (
+                method === "GET" &&
+                (url.pathname.startsWith("/@maki-fs/") || url.pathname.startsWith("/@maki/client"))
+            ) {
+                const path = url.pathname.startsWith("/@maki/client")
+                    ? join(makiBaseDir, "src/client/client.ts")
+                    : url.pathname.slice(10);
+                const importDir = dirname(path);
+
+                const build = await Bun.build({
+                    entrypoints: [path],
+                    external: [
+                        "react",
+                        "react-dom",
+                        "react-server-dom-esm",
+                        join(makiBaseDir, "src/components/Router"),
+                        join(makiBaseDir, "src/components/MakiShell"),
+                        join(makiBaseDir, "src/components/Link"),
+                    ],
+                    target: "browser",
+                    format: "esm",
+                    sourcemap: "inline",
+                    splitting: false,
+                });
+
+                if (!build.success) {
+                    console.error("Module build failed", path);
+                    throw new AggregateError(build.logs, "Module build failed");
+                }
+
+                const transpiled = await build.outputs[0].text();
+                const source = transpiled
+                    .replace(
+                        //? import * as React from "react";
+                        //? import React from "react";
+                        /import\s*(?:\*\s*as)?\s*([^\s{}]*?)\s*from\s*"(.+?)"\s*;/g,
+                        (match: string, name: string, moduleName: string) => {
+                            console.log("🚀 ~ fetch ~ match:", match);
+                            const path = Bun.resolveSync(moduleName, importDir);
+
+                            return `import ${name} from"/@maki-fs/${path}";`;
+                        },
+                    )
+                    .replace(
+                        //? import { version as v } from "react";
+                        /import\s*({\s*[\w\s, $]+\s*})?\s*from\s*"(react.*?)"\s*;/g,
+                        (match: string, namedImports: string, moduleName: string) => {
+                            console.log("🚀 ~ fetch ~ match:", match);
+                            const path = Bun.resolveSync(moduleName, importDir);
+                            const name =
+                                path === "/home/guibi/Git/maki/packages/maki/src/components/Router.tsx"
+                                    ? 20
+                                    : Math.round(Math.random() * 10000);
+
+                            return `import mod${name} from"/@maki-fs/${path}"; const ${namedImports.replaceAll(" as", ":")}=mod${name};`;
+                        },
+                    )
+                    .replace(
+                        //? import { useRouter as u } from "maki";
+                        /import\s*({\s*[\w\s, $]+\s*})?\s*from\s*"(.+?)"\s*;/g,
+                        (match: string, namedImports: string, moduleName: string) => {
+                            console.log("🚀 ~ fetch ~ match:", match);
+                            const path = Bun.resolveSync(moduleName, importDir);
+
+                            return `import ${namedImports} from"/@maki-fs/${path}";`;
+                        },
+                    );
+
+                return new Response(source, { headers: { "Content-Type": "application/javascript" } });
+            }
+
             // * BUILD *
             if (method === "GET" && url.pathname.startsWith("/@maki/")) {
                 const pathname = url.pathname.slice(6);
-                if (pathname === "/ws") {
-                    if (server.upgrade(req)) return;
-                    return new Response("WebSocket upgrade failed", { status: 400 });
-                }
 
                 const output = build.outputs[pathname];
                 if (output) {
@@ -99,11 +175,10 @@ export async function createServer(options: ServerOptions) {
                 const pageStructure = getRoutePageStructure(matchingRoute, router);
                 const App = createFromNodeStream(
                     await renderServerComponents(matchingRoute, pageStructure, build.stylesheets, options),
-                    `${options.cwd}/.maki/client/`,
-                    "/@maki/",
+                    "",
+                    "/@maki-fs/",
                 );
 
-                const { default: MakiShell } = await import(join(options.cwd, ".maki/client/_internal/MakiShell.js"));
                 const page = createElement(MakiShell, {
                     router: { initial: { pathname: url.pathname } },
                     children: App,
@@ -138,6 +213,7 @@ export async function createServer(options: ServerOptions) {
     const watcher = watch(`${options.cwd}/src`, { recursive: true });
     watcher.addListener("change", async (_, fileName: string) => {
         if (fileName === "api.d.ts") return;
+        delete require.cache[join(options.cwd, "src", fileName)];
 
         log.fileChange(fileName);
         build = await buildProject(options);
@@ -149,11 +225,11 @@ export async function createServer(options: ServerOptions) {
     });
 
     console.log();
-    console.log(chalk.hex("#b4befe").bold(" 🍣 Maki"), chalk.dim("v0.0.1"));
-    console.log(chalk.hex("#cdd6f4")("  ↪ Local:"), colors.link(`http://${server.hostname}:${server.port}`));
+    console.log(chalk.hex("#b4befe").bold(" 🍣 Maki"), colors.dim("v0.0.1"));
+    console.log("  ↪ Local:", colors.link(`http://${server.hostname}:${server.port}`));
     console.log();
 
-    console.log(chalk.hex("#1e1e2e").bgHex("#a6e3a1")(" Ready "), `in ${msDeltaTime(startTime)}ms`);
+    console.log(colors.bgGreen(" Ready "), `in ${msDeltaTime(startTime)}ms`);
 
     return server;
 }
@@ -161,6 +237,9 @@ export async function createServer(options: ServerOptions) {
 type ReactDirective = "server" | "client";
 const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
 async function buildProject({ cwd, config }: ServerOptions, logs = true) {
+    if (cwd) {
+        return { outputs: {}, stylesheets: [] };
+    }
     const startTime = Bun.nanoseconds();
     const clientComponents = new Set<string>();
     const outputs: Record<string, Blob> = {};

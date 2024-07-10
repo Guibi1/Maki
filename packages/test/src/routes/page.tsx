@@ -14,7 +14,7 @@ export default function App() {
             <Counter />
 
             <p suppressHydrationWarning={true}>{new Date().toISOString()}</p>
-            {/* <p className="font-bold p-2 ring-1">HMR WORaaKS!</p> */}
+            <p className="font-bold p-2 ring-1">HMR WORKS!</p>
 
             <img src={Maki} alt="maki" />
         </>

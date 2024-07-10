@@ -1,19 +1,21 @@
 "use client";
 import { type ReactNode, createContext, use, useMemo, useState } from "react";
 
-interface AppRouter {
+export interface MakiRouter {
     push(href: string): void;
     preload(href: string): void;
     get href(): string;
 }
 
-const RouterContext = createContext<AppRouter | null>(null);
+const RouterContext = createContext<MakiRouter | null>(null);
+if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && !window.maki.RouterContext)
+    window.maki.RouterContext = RouterContext;
 
 type RouterProps = { children: ReactNode; initial: { pathname: string } };
 export default function Router({ children, initial }: RouterProps) {
     const [pathname, setPathname] = useState(initial.pathname);
 
-    const appRouter = useMemo<AppRouter>(
+    const appRouter = useMemo<MakiRouter>(
         () => ({
             push(href) {
                 window.history.pushState({}, "", href);
@@ -37,7 +39,13 @@ export default function Router({ children, initial }: RouterProps) {
 }
 
 export function useRouter() {
-    const router = use(RouterContext);
+    const router =
+        process.env.NODE_ENV === "production"
+            ? use(RouterContext)
+            : typeof window === "undefined"
+              ? use(RouterContext)
+              : use(window.maki.RouterContext);
+
     if (!router) throw "Router not mounted...";
     return router;
 }
