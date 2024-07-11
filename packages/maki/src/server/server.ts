@@ -72,7 +72,17 @@ export async function createServer(options: ServerOptions) {
                 const path = url.pathname.startsWith("/@maki/client")
                     ? join(makiBaseDir, "src/client/client.ts")
                     : url.pathname.slice(10);
-                const importDir = dirname(path);
+
+                if (!path.match(/\.[cm]?[jt]sx?$/)) {
+                    const asset = await options.config.plugins
+                        .filter((plugin) => path.match(plugin.filter))
+                        .reduce<Promise<Blob>>(
+                            (blob, plugin) => blob.then((blob) => plugin.modify(blob, path)),
+                            Promise.resolve(Bun.file(path)),
+                        );
+
+                    return new Response(asset);
+                }
 
                 const build = await Bun.build({
                     entrypoints: [path],
@@ -95,6 +105,7 @@ export async function createServer(options: ServerOptions) {
                     throw new AggregateError(build.logs, "Module build failed");
                 }
 
+                const importDir = dirname(path);
                 const transpiled = await build.outputs[0].text();
                 const source = transpiled
                     .replace(
@@ -102,7 +113,6 @@ export async function createServer(options: ServerOptions) {
                         //? import React from "react";
                         /import\s*(?:\*\s*as)?\s*([^\s{}]*?)\s*from\s*"(.+?)"\s*;/g,
                         (match: string, name: string, moduleName: string) => {
-                            console.log("🚀 ~ fetch ~ match:", match);
                             const path = Bun.resolveSync(moduleName, importDir);
 
                             return `import ${name} from"/@maki-fs/${path}";`;
@@ -112,7 +122,6 @@ export async function createServer(options: ServerOptions) {
                         //? import { version as v } from "react";
                         /import\s*({\s*[\w\s, $]+\s*})?\s*from\s*"(react.*?)"\s*;/g,
                         (match: string, namedImports: string, moduleName: string) => {
-                            console.log("🚀 ~ fetch ~ match:", match);
                             const path = Bun.resolveSync(moduleName, importDir);
                             const name =
                                 path === "/home/guibi/Git/maki/packages/maki/src/components/Router.tsx"
@@ -126,7 +135,6 @@ export async function createServer(options: ServerOptions) {
                         //? import { useRouter as u } from "maki";
                         /import\s*({\s*[\w\s, $]+\s*})?\s*from\s*"(.+?)"\s*;/g,
                         (match: string, namedImports: string, moduleName: string) => {
-                            console.log("🚀 ~ fetch ~ match:", match);
                             const path = Bun.resolveSync(moduleName, importDir);
 
                             return `import ${namedImports} from"/@maki-fs/${path}";`;

@@ -1,13 +1,15 @@
 "use client";
-import { type ReactNode, createContext, use, useMemo, useState } from "react";
+import { type ReactNode, createContext, use, useEffect, useMemo, useState } from "react";
 
 export interface MakiRouter {
-    push(href: string): void;
-    preload(href: string): void;
-    get href(): string;
+    push(pathname: string): void;
+    preload(pathname: string): void;
+    get pathname(): string;
 }
 
 const RouterContext = createContext<MakiRouter | null>(null);
+
+// TODO: Fix this workaround :/
 if (process.env.NODE_ENV !== "production" && typeof window !== "undefined" && !window.maki.RouterContext)
     window.maki.RouterContext = RouterContext;
 
@@ -17,20 +19,36 @@ export default function Router({ children, initial }: RouterProps) {
 
     const appRouter = useMemo<MakiRouter>(
         () => ({
-            push(href) {
-                window.history.pushState({}, "", href);
-                window.maki.render(href);
-                setPathname(href);
+            push(pathname) {
+                window.history.pushState({}, "", pathname);
+                window.maki.render(pathname);
+                setPathname(pathname);
             },
-            preload(href) {
+            preload(pathname) {
                 // preloadModule(href, { as: "script" });
             },
-            get href(): string {
+            get pathname() {
                 return pathname;
             },
         }),
         [pathname],
     );
+
+    useEffect(() => {
+        const ac = new AbortController();
+
+        window.addEventListener(
+            "popstate",
+            () => {
+                const pathname = window.location.pathname;
+                window.maki.render(pathname);
+                setPathname(pathname);
+            },
+            ac,
+        );
+
+        return ac.abort;
+    }, []);
 
     return (
         // @ts-expect-error: React 19 api

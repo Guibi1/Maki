@@ -9,6 +9,7 @@ import type { MatchingRoute, PageStructure, ServerOptions } from "./server";
 
 const makiBaseDir = `${resolve(import.meta.dir, "..")}/`;
 let parseImport = false;
+const stylesheetss: string[] = [];
 
 const moduleBasePath = "@maki-fs/";
 
@@ -19,20 +20,21 @@ export async function renderServerComponents(
     { cwd }: ServerOptions,
 ): Promise<PassThrough> {
     parseImport = true;
-    let currentPage: ReactNode = await importComponent(
-        join(cwd, "src/routes", route.pathname, route.type),
-        route.props,
-    );
+
+    const pageComponent = await importComponent(join(cwd, "src/routes", route.pathname, route.type));
+    let currentPage: ReactNode = pageComponent(route.props);
 
     for (const r of pageStructure.toReversed()) {
         if (r.loading) {
+            const loadingComponent = await importComponent(join(cwd, "src/routes", r.pathname, "layout"));
             currentPage = createElement(Suspense, {
-                fallback: await importComponent(join(cwd, "src/routes", r.pathname, "loading"), route.props),
+                fallback: loadingComponent(route.props),
                 children: currentPage,
             });
         }
 
         if (r.layout) {
+            const layoutComponent = await importComponent(join(cwd, "src/routes", r.pathname, "layout"));
             const props = {
                 ...route.props,
                 children: currentPage,
@@ -41,14 +43,14 @@ export async function renderServerComponents(
             if (r.pathname === "/") {
                 Object.assign(props, {
                     head: createElement(Fragment, {
-                        children: stylesheets.map((href) =>
+                        children: stylesheetss.map((href) =>
                             createElement("link", { rel: "stylesheet", href, key: href }),
                         ),
                     }),
                 });
             }
 
-            currentPage = await importComponent(join(cwd, "src/routes", r.pathname, "layout"), props);
+            currentPage = layoutComponent(props);
         }
 
         if (r.error) {
@@ -98,7 +100,7 @@ export async function handleServerAction(req: Request, { cwd }: ServerOptions) {
     const returnValue = await action.apply(null, args); // Call the action
 
     const props = Object.fromEntries(url.searchParams.entries()); // We will use the query as props for the page
-    const root = await importComponent(join(cwd, ".maki/src/routes", url.pathname, "page.js"), props);
+    const root = (await importComponent(join(cwd, ".maki/src/routes", url.pathname, "page.js")))(props);
 
     // Render the app with the RSC, action result and the new root
     return renderToPipeableStream({ returnValue, root }, moduleBasePath).pipe(new PassThrough());
@@ -118,20 +120,24 @@ function webToNodeStream(stream: ReadableStream): Readable {
     });
 }
 
-async function importComponent(path: string, props = {}, importName = "default") {
+async function importComponent(path: string, importName = "default") {
     const module = (await import(path))[importName];
 
     if (typeof module === "function") {
         // The module is a server-component
-        const component = module(props);
-        if (component instanceof Promise) {
-            return createElement(({ component }) => use(component), { component });
-        }
-        return component;
+        return (props: Record<string, unknown>) => {
+            const component = module(props);
+            if (component instanceof Promise) {
+                return createElement(({ component }) => use(component), { component });
+            }
+            return component as ReactNode;
+        };
     }
 
     // The module is a client-component
-    return createElement(module, props);
+    return (props: Record<string, unknown>) => {
+        return createElement(module, props);
+    };
 }
 
 const imports: string[] = [];
@@ -139,11 +145,6 @@ const rscImportTransformerPlugin: BunPlugin = {
     name: "Maki RSC client import",
     async setup(build) {
         function exportToJsx(exportName: string, path: string, directive: ReactDirective) {
-            const isInternalMakiFile = path.startsWith(makiBaseDir);
-
-            const exportPath = isInternalMakiFile
-                ? relative(makiBaseDir, path).replace("src/components", "_internal")
-                : relative(process.cwd(), path);
             const id = `@maki-fs/${path}#${exportName}`;
             const mod = `${exportName === "default" ? parse(path).name : ""}_${exportName}`;
 
@@ -161,7 +162,7 @@ const rscImportTransformerPlugin: BunPlugin = {
             const file = await Bun.file(args.path).text();
             if (!parseImport) return { contents: file };
 
-            const directive = file.match(/^[\s\n;]*(["`'])use (client)\1/);
+            const directive = file.match(/^[\s\n;]*(["`'])use (client|server)\1/);
             if (!directive) return { contents: file }; // If there are no directives, we let it be bundled
 
             const { exports } = transpiler.scan(file);
@@ -170,6 +171,19 @@ const rscImportTransformerPlugin: BunPlugin = {
             imports.push(args.path);
             return {
                 contents: exports.map((e) => exportToJsx(e, args.path, directive[2] as ReactDirective)).join("\n"),
+            };
+        });
+
+        build.onLoad({ filter: /\.(?![cm]?[jt]sx?)[^.]*?$/ }, async (args) => {
+            if (!parseImport) return;
+
+            if (args.path.endsWith(".css")) {
+                stylesheetss.push(`/@maki-fs/${args.path}`);
+            }
+
+            return {
+                exports: { default: `/@maki-fs/${args.path}` },
+                loader: "object",
             };
         });
     },
