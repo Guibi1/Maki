@@ -1,8 +1,9 @@
 import type { Stream } from "node:stream";
 import { colors } from "@/log";
+import { ArkErrors } from "arktype";
 import type { Attributes, ElementType } from "react";
 import { jsx } from "react/jsx-runtime";
-import type { MakiConfig } from "./types";
+import { type MakiConfig, makiConfigValidator } from "./types";
 
 /**
  * Creates the JSX structure to render a React Component.
@@ -42,11 +43,16 @@ export function pipeToReadableStream(stream: Stream): ReadableStream {
  */
 export async function loadMakiConfig(folder: string): Promise<MakiConfig> {
     try {
-        const config = (await import(`${folder}/maki.config`)).default;
-        // TODO: Validate the config schema
-        return config;
-    } catch {
-        throw `Could not load the Maki config file at ${colors.link(folder)}.`;
+        const module = await import(`${folder}/maki.config`);
+        const config = makiConfigValidator(module.default);
+
+        if (config instanceof ArkErrors) {
+            throw config.summary;
+        }
+
+        return module.default as MakiConfig;
+    } catch (e) {
+        throw `Could not load the Maki config file at ${colors.link(folder)}.\nReason: ${e}`;
     }
 }
 

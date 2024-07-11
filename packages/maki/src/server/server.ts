@@ -1,9 +1,9 @@
 import { readFileSync, watch } from "node:fs";
-import { basename, dirname, extname, format, isAbsolute, join, parse, relative, resolve } from "node:path";
+import { basename, dirname, format, join, parse, relative, resolve } from "node:path";
 import MakiShell from "@/components/MakiShell";
 import log, { colors } from "@/log";
 import { createElement, msDeltaTime, pipeToReadableStream, searchParamsToObj } from "@/utils";
-import type { JavaScriptLoader, Server } from "bun";
+import type { Server } from "bun";
 import chalk from "chalk";
 import { renderToReadableStream } from "react-dom/server";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
@@ -77,7 +77,7 @@ export async function createServer(options: ServerOptions) {
                     const asset = await options.config.plugins
                         .filter((plugin) => path.match(plugin.filter))
                         .reduce<Promise<Blob>>(
-                            (blob, plugin) => blob.then((blob) => plugin.modify(blob, path)),
+                            (blob, plugin) => blob.then((blob) => plugin.tranform(blob, path)),
                             Promise.resolve(Bun.file(path)),
                         );
 
@@ -322,7 +322,7 @@ async function buildProject({ cwd, config }: ServerOptions, logs = true) {
                         const asset = await config.plugins
                             .filter((plugin) => args.path.match(plugin.filter))
                             .reduce<Promise<Blob>>(
-                                (blob, plugin) => blob.then((blob) => plugin.modify(blob, args.path)),
+                                (blob, plugin) => blob.then((blob) => plugin.tranform(blob, args.path)),
                                 Promise.resolve(Bun.file(args.path)),
                             );
 

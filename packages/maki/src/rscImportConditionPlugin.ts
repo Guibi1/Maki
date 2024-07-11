@@ -12,7 +12,7 @@ const rscImportConditionPlugin: BunPlugin = {
                 entrypoints: [path],
                 target: "bun",
                 conditions: "react-server", // The magic happens here!
-                external: ["node:*"],
+                external: ["node:*", "arktype"],
                 sourcemap: "inline",
             });
 

@@ -1,4 +1,4 @@
-import { format, join, parse, relative, resolve } from "node:path";
+import { format, join, parse, resolve } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { createElement } from "@/utils";
 import type { BunPlugin } from "bun";
@@ -7,7 +7,6 @@ import { Fragment, type ReactNode, Suspense, use } from "react";
 import { decodeReply, decodeReplyFromBusboy, renderToPipeableStream } from "react-server-dom-esm/server.node";
 import type { MatchingRoute, PageStructure, ServerOptions } from "./server";
 
-const makiBaseDir = `${resolve(import.meta.dir, "..")}/`;
 let parseImport = false;
 const stylesheetss: string[] = [];
 

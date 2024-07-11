@@ -1,9 +1,29 @@
+import { type Type, type } from "arktype";
 import type { ReactNode } from "react";
 
+export const makiConfigValidator = type({
+    plugins: (
+        type({
+            name: "string",
+            filter: "RegExp|string",
+            tranform: "Function",
+        }) as Type<MakiPlugin>
+    ).array(),
+}) satisfies Type<MakiConfig>;
+
+/**
+ * The config of Maki.
+ */
 export type MakiConfig = {
+    /**
+     * The plugins to load and use.
+     */
     plugins: MakiPlugin[];
 };
 
+/**
+ * A Maki Plugin, used to transform any asset at compile-time.
+ */
 export type MakiPlugin = {
     /**
      * The name of the plugin.
@@ -19,7 +39,7 @@ export type MakiPlugin = {
     /**
      * The transform function of the plugin.
      */
-    modify: (file: Blob, path: string) => Promise<Blob> | Blob;
+    tranform: (file: Blob, path: string) => Promise<Blob> | Blob;
 };
 
 /**
