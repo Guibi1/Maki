@@ -9,7 +9,7 @@ export default function makiPostCssPlugin(options: MakiPostCssPluginOptions): Ma
     return {
         name: "Maki PostCSS",
         filter: /\.(post)?css$/,
-        async modify(blob, path) {
+        async tranform(blob, path) {
             const css = await blob.text();
             const result = await processor.process(css, { from: path });
 

@@ -6,15 +6,14 @@ import { hydrateRoot } from "react-dom/client";
 import { createFromFetch } from "react-server-dom-esm/client.browser";
 
 const root = hydrateRoot(document, fetchReactTree(location.pathname));
-connectHMR();
-
 window.maki.render = (pathname: string) => {
     root.render(fetchReactTree(pathname));
 };
 
+connectHMR();
+
 function connectHMR() {
     const ws = new WebSocket("/@maki/ws");
-    ws.addEventListener("open", () => console.log("HMR client loaded"));
 
     ws.addEventListener("message", async ({ data }) => {
         const message = JSON.parse(data);
@@ -26,12 +25,11 @@ function connectHMR() {
         }
     });
 
-    const reconnect = () => {
-        console.error("HMR client disconnected");
+    ws.addEventListener("open", () => console.log("Maki client connected"));
+    ws.addEventListener("close", () => {
+        console.error("Maki client disconnected");
         setTimeout(connectHMR, 1000);
-    };
-    ws.addEventListener("close", reconnect);
-    ws.addEventListener("error", reconnect);
+    });
 }
 
 async function callServerActions(id: string, args: unknown[]) {
