@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "next",
-    "arktype": "2.0.0-dev.13",
+    "arktype": "^2.0.0-dev.29",
     "maki": "workspace:*",
     "maki-postcss-plugin": "workspace:*",
     "tailwindcss": "next"

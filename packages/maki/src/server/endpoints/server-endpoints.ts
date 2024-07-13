@@ -8,8 +8,6 @@ import type {
     ServerEndpointValidators,
 } from "./types";
 
-// TODO: TypeSafe Slugs
-
 /**
  * Writes the global `MakiServerEndpoints` type into `api.d.ts` with the appropriate routes path.
  * @param router The app router
@@ -25,7 +23,7 @@ export async function writeGlobalApiEndpointsTypes(router: RouteFragment, { cwd 
     function writeRouteTypes(route: RouteFragment) {
         if (route.endpoints?.size) {
             writer.write(
-                `    "${route.pathname}": import("maki/server").MakiServerEndpoint<typeof import("./routes${route.pathname}/server")>;\n`,
+                `    "${route.path}": import("maki/server").MakiServerEndpoint<typeof import("./routes${route.path}/server")>;\n`,
             );
         }
 

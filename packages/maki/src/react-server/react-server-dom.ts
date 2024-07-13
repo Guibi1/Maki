@@ -1,48 +1,48 @@
-import { format, join, parse, resolve } from "node:path";
+import { join, parse, resolve } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { createElement } from "@/utils";
 import type { BunPlugin } from "bun";
 import { Fragment, type ReactNode, Suspense, use } from "react";
 // import busboy from "busboy";
 import { decodeReply, decodeReplyFromBusboy, renderToPipeableStream } from "react-server-dom-esm/server.node";
-import type { MatchingRoute, PageStructure, ServerOptions } from "./server";
+import type { MatchingRoute, PageStructure } from "../server/server";
 
 let parseImport = false;
-const stylesheetss: string[] = [];
+const stylesheets: string[] = [];
 
 const moduleBasePath = "@maki-fs/";
 
 export async function renderServerComponents(
-    route: MatchingRoute,
+    matchingRoute: MatchingRoute,
     pageStructure: PageStructure,
-    stylesheets: string[],
-    { cwd }: ServerOptions,
+    { cwd }: { cwd: string },
 ): Promise<PassThrough> {
+    stylesheets.length === 0;
     parseImport = true;
 
-    const pageComponent = await importComponent(join(cwd, "src/routes", route.pathname, route.type));
-    let currentPage: ReactNode = pageComponent(route.props);
+    const pageComponent = await importComponent(join(cwd, "src/routes", matchingRoute.path, matchingRoute.type));
+    let currentPage: ReactNode = pageComponent(matchingRoute.props);
 
     for (const r of pageStructure.toReversed()) {
         if (r.loading) {
-            const loadingComponent = await importComponent(join(cwd, "src/routes", r.pathname, "layout"));
+            const loadingComponent = await importComponent(join(cwd, "src/routes", r.path, "layout"));
             currentPage = createElement(Suspense, {
-                fallback: loadingComponent(route.props),
+                fallback: loadingComponent(matchingRoute.props),
                 children: currentPage,
             });
         }
 
         if (r.layout) {
-            const layoutComponent = await importComponent(join(cwd, "src/routes", r.pathname, "layout"));
+            const layoutComponent = await importComponent(join(cwd, "src/routes", r.path, "layout"));
             const props = {
-                ...route.props,
+                ...matchingRoute.props,
                 children: currentPage,
             };
 
-            if (r.pathname === "/") {
+            if (r.path === "/") {
                 Object.assign(props, {
                     head: createElement(Fragment, {
-                        children: stylesheetss.map((href) =>
+                        children: stylesheets.map((href) =>
                             createElement("link", { rel: "stylesheet", href, key: href }),
                         ),
                     }),
@@ -63,14 +63,20 @@ export async function renderServerComponents(
         }
     }
 
-    const s = renderToPipeableStream(currentPage, moduleBasePath).pipe(new PassThrough());
+    const MakiApp = await importComponent("../components/MakiApp");
+    const App = createElement(MakiApp, {
+        router: { initial: { pathname: matchingRoute.pathname } },
+        children: currentPage,
+    });
+
+    const stream = renderToPipeableStream(App, moduleBasePath).pipe(new PassThrough());
 
     nukeImports();
     parseImport = false;
-    return s;
+    return stream;
 }
 
-export async function handleServerAction(req: Request, { cwd }: ServerOptions) {
+export async function handleServerAction(req: Request, { cwd }: { cwd: string }): Promise<PassThrough> {
     const actionReference = String(req.headers.get("rsa-reference"));
     const actionOrigin = String(req.headers.get("rsa-origin"));
     const url = new URL(req.url);
@@ -177,7 +183,7 @@ const rscImportTransformerPlugin: BunPlugin = {
             if (!parseImport) return;
 
             if (args.path.endsWith(".css")) {
-                stylesheetss.push(`/@maki-fs/${args.path}`);
+                stylesheets.push(`/@maki-fs/${args.path}`);
             }
 
             return {
@@ -189,15 +195,6 @@ const rscImportTransformerPlugin: BunPlugin = {
 };
 
 type ReactDirective = "server" | "client";
-/**
- * Removes the file extension of a path, if it has one.
- * @param path The path to parse
- * @returns The path without the file extension
- */
-export function removeFileExtension(path: string) {
-    const parsed = parse(path);
-    return format({ ...parsed, base: parsed.name });
-}
 
 Bun.plugin(rscImportTransformerPlugin);
 

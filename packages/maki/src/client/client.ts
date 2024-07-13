@@ -1,7 +1,4 @@
-import MakiShell from "@/components/MakiShell";
-import type { MakiRouter } from "@/components/Router";
-import { createElement } from "@/utils";
-import type { Context, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { createFromFetch } from "react-server-dom-esm/client.browser";
 
@@ -51,19 +48,13 @@ async function callServerActions(id: string, args: unknown[]) {
 function fetchReactTree(pathname: string): ReactNode {
     const url = new URL(`/@maki/jsx${pathname}`, location.origin);
     url.search = location.search;
-
-    const Page = createFromFetch(fetch(url), { callServer: callServerActions, moduleBaseURL: "/@maki-fs/" });
-    return createElement(MakiShell, {
-        router: { initial: { pathname } },
-        children: Page,
-    });
+    return createFromFetch(fetch(url), { callServer: callServerActions, moduleBaseURL: "/@maki-fs/" });
 }
 
 declare global {
     interface Window {
         maki: {
             render: (pathname: string) => void;
-            RouterContext: Context<MakiRouter | null>;
         };
     }
 }

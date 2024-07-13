@@ -1,3 +1,4 @@
+import { format, parse } from "node:path";
 import type { Stream } from "node:stream";
 import { colors } from "@/log";
 import { ArkErrors } from "arktype";
@@ -34,6 +35,24 @@ export function pipeToReadableStream(stream: Stream): ReadableStream {
             });
         },
     });
+}
+
+/**
+ * Removes the file extension of a path, if it has one.
+ * @param path The path to parse
+ * @returns The path without the file extension
+ */
+export function removeFileExtension(path: string) {
+    const parsed = parse(path);
+    return format({ ...parsed, base: parsed.name });
+}
+
+/**
+ *
+ * @returns
+ */
+export function getMakiBaseDir() {
+    return import.meta.dir.slice(0, import.meta.dir.lastIndexOf("/"));
 }
 
 /**

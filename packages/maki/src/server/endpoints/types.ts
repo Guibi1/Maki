@@ -5,6 +5,10 @@ export type OutputTypeOfExistingKeys<T> = {
     [K in keyof T as T[K] extends Required<T>[K] ? K : never]: T[K] extends Type ? T[K]["tOut"] : never;
 };
 
+/**
+ * Extracts the params from a string.
+ * @see {@link ServerEndpointHandlerProps.params Props.params}
+ */
 export type MakiServerEndpointParams<Pathname extends string> = Pathname extends `/${infer Rest}`
     ? ExtractParamsFromPath<Rest> extends never
         ? Record<never, never>
