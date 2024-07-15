@@ -1,3 +1,4 @@
+import { version } from "@/package.json";
 import { msDeltaTime } from "@/utils";
 import chalk from "chalk";
 import type { HttpMethod } from "./server/endpoints/types";
@@ -7,6 +8,10 @@ function getTime() {
 }
 
 export default {
+    maki() {
+        console.log();
+        console.log(chalk.hex("#b4befe").bold(" 🍣 Maki"), colors.dim(`v${version}`));
+    },
     request(method: HttpMethod, url: URL) {
         console.log(getTime(), chalk.hex("#cba6f7")(method), url.pathname);
     },

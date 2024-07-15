@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { resolve } from "node:path";
+import { version } from "@/package.json";
 import reactServerPlugin from "@/react-server/react-server-plugin";
 import type { MakiConfig } from "@/types";
 import { loadMakiConfig } from "@/utils";
@@ -8,7 +9,7 @@ import { Command, Option } from "commander";
 
 Bun.plugin(reactServerPlugin);
 
-const commander = new Command().name("maki").description("CLI to some JavaScript string utilities").version("0.0.1");
+const commander = new Command().name("maki").description("CLI to some JavaScript string utilities").version(version);
 
 commander
     .command("dev")

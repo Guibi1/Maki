@@ -4,6 +4,7 @@
     "compilerOptions": {
         "paths": {
             "@/*": ["./src/*"],
+            "@/package.json": ["./package.json"],
             "@/components/*": ["./src/components/*"],
             "@/utils": ["./src/utils"],
             "@/log": ["./src/log"]

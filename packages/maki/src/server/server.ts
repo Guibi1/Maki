@@ -213,8 +213,7 @@ export function createServer(options: MakiDevCliOptions) {
         server.publish("hmr", JSON.stringify({ type: "change", pathname: `/${parse(fileName).dir}` }), true);
     });
 
-    console.log();
-    console.log(chalk.hex("#b4befe").bold(" 🍣 Maki"), colors.dim("v0.0.1"));
+    log.maki();
     console.log("  ↪ Local:", colors.link(`http://${server.hostname}:${server.port}`));
     console.log();
 

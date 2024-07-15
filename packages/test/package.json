@@ -2,6 +2,7 @@
   "name": "test",
   "module": "index.ts",
   "type": "module",
+  "private": true,
   "scripts": {
     "dev": "maki dev",
     "build": "maki build",

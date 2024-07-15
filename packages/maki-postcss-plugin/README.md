@@ -1,15 +1,11 @@
-# maki-tailwind-plugin
+<p align="center">
+    <a href="https://maki.guibi.dev">
+        <img src="https://github.com/user-attachments/assets/05a29f9e-08ae-4840-856f-be898e09acb7" height="128">
+        <h1 align="center">Maki PostCSS Plugin</h1>
+    </a>
+</p>
 
-To install dependencies:
-
-```bash
-bun install
-```
-
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.1.3. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+<p align="center">
+    <img alt="NPM Version" src="https://img.shields.io/npm/v/%40makimono%2Fmaki-postcss-plugin?style=for-the-badge">
+    <img alt="NPM License" src="https://img.shields.io/npm/l/%40makimono%2Fmaki-postcss-plugin?style=for-the-badge">
+</p>

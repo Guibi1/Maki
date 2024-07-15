@@ -1,6 +1,8 @@
 {
   "name": "maki",
   "type": "module",
+  "version": "0.0.1",
+  "private": false,
   "bin": {
     "maki": "./src/bin/maki.ts"
   },

@@ -7,11 +7,11 @@ import { getMakiBaseDir, removeFileExtension } from "@/utils";
 type ReactDirective = "server" | "client";
 const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
 export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
+    log.maki();
+
     const startTime = Bun.nanoseconds();
     const outdir = join(cwd, ".maki");
     const clientComponents = new Set<string>();
-    const outputs: Record<string, Blob> = {};
-    const stylesheets: string[] = [];
 
     if (existsSync(outdir)) {
         rmdirSync(outdir, { recursive: true });
@@ -89,9 +89,8 @@ export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
 
                         const hash = Bun.hash.cityHash32(await asset.arrayBuffer());
                         const url = `/@maki/assets/${name}-${hash}${ext}`;
-                        outputs[`/assets/${name}-${hash}${ext}`] = asset;
+                        await Bun.write(join(outdir, `/assets/${name}-${hash}${ext}`), asset);
 
-                        if (ext === ".css") stylesheets.push(url);
                         return {
                             contents: url,
                             loader: "text",
@@ -162,12 +161,13 @@ export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
             {
                 name: "Maki Asset Handler",
                 setup(build) {
-                    build.onLoad({ filter: /.+/ }, (args) => {
+                    build.onLoad({ filter: /.+/ }, async (args) => {
                         if (args.namespace !== "file" || !["css", "js", "file"].includes(args.loader)) return;
 
                         const { name, ext } = parse(args.path);
                         const hash = Bun.hash.cityHash32(args.path);
-                        outputs[`/assets/${name}-${hash}${ext}`] = Bun.file(args.path);
+                        await Bun.write(join(outdir, `/assets/${name}-${hash}${ext}`), Bun.file(args.path));
+
                         return {
                             contents: `/@maki/assets/${name}-${hash}${ext}`,
                             loader: "text",
@@ -187,13 +187,12 @@ export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
     if (!clientOutput) {
         throw "Build error: Couldnt find the client entry-point.";
     }
-    outputs["/client"] = new Blob(
-        [
-            (await clientOutput.text())
-                .replace(/"(?:\.{1,2}\/)+(?:[a-zA-Z0-9]+\/)+([a-zA-Z0-9]+\.js)"/g, '"/@maki/_internal/$1"')
-                .replace(/"(?:[.a-zA-Z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g, '"/$1"'),
-        ],
-        { type: "text/javascript" },
+
+    await Bun.write(
+        join(outdir, "client.js"),
+        (await clientOutput.text())
+            .replace(/"(?:\.{1,2}\/)+(?:[a-zA-Z0-9]+\/)+([a-zA-Z0-9]+\.js)"/g, '"/@maki/_internal/$1"')
+            .replace(/"(?:[.a-zA-Z0-9]+\/)+?(@maki\/chunks\/[a-z0-9]+\.js)"/g, '"/$1"'),
     );
 
     for (const output of clientBuild.outputs) {
@@ -209,8 +208,7 @@ export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
                 '"../$1"',
             );
 
-            Bun.write(join(outdir, `client/_internal/${basename(path)}`), source);
-            outputs[`/_internal/${basename(path)}`] = new Blob([source], { type: "text/javascript" });
+            await Bun.write(join(outdir, `client/_internal/${basename(path)}`), source);
             continue;
         }
 
@@ -219,10 +217,8 @@ export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
             '"./../_internal/$1"',
         );
 
-        Bun.write(join(outdir, "client", path), source);
-        outputs[path] = new Blob([source], { type: "text/javascript" });
+        await Bun.write(join(outdir, "client", path), source);
     }
 
     log.buildComplete(startTime, "Compilation done");
-    return { outputs, stylesheets };
 }
