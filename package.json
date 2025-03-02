@@ -5,7 +5,7 @@
     "packages/*"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^1.8.3",
+    "@biomejs/biome": "^1.9.4",
     "@types/bun": "latest"
   },
   "trustedDependencies": [
