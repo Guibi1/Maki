@@ -5,7 +5,7 @@ import log from "@/log";
 import { getMakiBaseDir, removeFileExtension } from "@/utils";
 
 type ReactDirective = "server" | "client";
-const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
+
 export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
     log.maki();
 
@@ -18,6 +18,7 @@ export async function buildProject({ cwd, config }: MakiBuildCliOptions) {
     }
 
     // * Server components * //
+    const sourceFileGlob = new Bun.Glob("**/*.{tsx,jsx,ts,js}");
     const serverBuild = await Bun.build({
         entrypoints: Array.from(sourceFileGlob.scanSync({ cwd: `${cwd}/src` })).map((s) => `${cwd}/src/${s}`),
         root: `${cwd}/src`,

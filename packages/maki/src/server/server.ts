@@ -5,11 +5,10 @@ import log, { colors } from "@/log";
 import { handleServerAction, renderServerComponents } from "@/react-server/react-server-dom";
 import { getMakiBaseDir, msDeltaTime, pipeToReadableStream, searchParamsToObj } from "@/utils";
 import type { Server } from "bun";
-import chalk from "chalk";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { createFromNodeStream } from "react-server-dom-esm/client.node";
-import { handleServerEndpoint, writeGlobalApiEndpointsTypes } from "./endpoints/server-endpoints";
+import { handleServerEndpoint, refreshGlobalApiEndpointsTypes } from "./endpoints/server-endpoints";
 import { type HttpMethod, isHttpMethod } from "./endpoints/types";
 
 // TODO: handle head
@@ -18,7 +17,9 @@ import { type HttpMethod, isHttpMethod } from "./endpoints/types";
 
 export function createServer(options: MakiDevCliOptions) {
     const startTime = Bun.nanoseconds();
+
     let router = createRouter(options);
+    refreshGlobalApiEndpointsTypes(options);
 
     const server: Server = Bun.serve({
         async fetch(req) {
@@ -222,23 +223,23 @@ export function createServer(options: MakiDevCliOptions) {
     return server;
 }
 
-const transpiler = new Bun.Transpiler();
-const routerGlob = new Bun.Glob("**/{page,layout,loading,error,notFound,server}.{tsx,jsx,ts,js}");
 function createRouter(options: MakiDevCliOptions) {
-    const files = Array.from(routerGlob.scanSync({ cwd: `${options.cwd}/src/routes` })).map(parse);
-    const router: RouteFragment = { path: "/" };
+    const transpiler = new Bun.Transpiler();
+    const routerGlob = new Bun.Glob("**/{page,layout,loading,error,notFound,server}.{tsx,jsx,ts,js}");
 
-    for (const path of files) {
-        const dir = path.dir.split("/").map((p) => `/${p}`);
+    const router: RouteFragment = { path: "" };
 
-        const parentRoute: Route = dir.reduce((parent, path, i) => {
+    for (const path of Array.from(routerGlob.scanSync({ cwd: `${options.cwd}/src/routes` })).map(parse)) {
+        const pathFragments = getPathnameFragments(path.dir);
+
+        const parentRoute: Route = pathFragments.reduce((parent, path, i) => {
             if (path === "/") return parent;
             if (!parent.routes) {
                 parent.routes = {};
             }
 
             if (!(path in parent.routes)) {
-                parent.routes[path] = { path: dir.slice(0, i + 1).join("") };
+                parent.routes[path] = { path: pathFragments.slice(0, i + 1).join("") };
 
                 const slugMatch = path.match(/^\/\[(.*)\]$/);
                 if (slugMatch) {
@@ -267,7 +268,6 @@ function createRouter(options: MakiDevCliOptions) {
         console.warn("Not having a root `notFound.tsx` will lead to a RUNTIME crash.");
     }
 
-    writeGlobalApiEndpointsTypes(router, options);
     return router;
 }
 
@@ -292,7 +292,7 @@ export type MatchingRoute = {
 };
 export type PageProps = { searchParams: Record<string, string | string[]>; params: Record<string, string> };
 function matchRoute(pathname: string, method: HttpMethod, searchParams: URLSearchParams, router: Route): MatchingRoute {
-    const pathFragments = getPathnameFragments(pathname.endsWith("/") ? pathname.slice(0, -1) || "/" : pathname);
+    const pathFragments = getPathnameFragments(pathname);
 
     type Match = { path: string; slugs: [number, string][]; type: "page" | "endpoint" | "notFound" };
     let matchingRoute: Match | undefined;
@@ -394,6 +394,19 @@ function routeIsSlug(route: Route): route is SlugRouteFragment {
 }
 
 function getPathnameFragments(pathname: string) {
-    if (pathname === "/") return ["/"];
-    return pathname.split("/").map((s) => `/${s}`);
+    if (pathname.length === 0) return [];
+
+    let lastSlash = pathname.length - 1;
+    if (pathname.at(lastSlash) === "/") {
+        while (pathname.at(lastSlash - 1) === "/") {
+            lastSlash -= 1;
+
+            if (lastSlash === 0) {
+                return [""];
+            }
+        }
+        return pathname.slice(0, lastSlash + 1).split("/");
+    }
+
+    return pathname.split("/");
 }
